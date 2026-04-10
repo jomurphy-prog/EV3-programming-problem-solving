@@ -6,24 +6,40 @@
   <script src="https://unpkg.com/blockly/blockly.min.js"></script>
   <script src="https://unpkg.com/blockly/javascript_compressed.js"></script>
   <style>
-    /* ... keep your existing CSS styles ... */
+    body { font-family: system-ui, sans-serif; padding: 20px; background: #f4f4f9; margin: 0; }
+    .header { max-width: 800px; margin: 0 auto 20px auto; display: flex; justify-content: space-between; align-items: center; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #0055A5; color: white; border: none; border-radius: 4px; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    #runBtn { background: #28a745; }
+    #runBtn:disabled { background: #ccc; }
+    #status { font-weight: bold; color: #333; margin-left: 15px; }
+    /* This height is critical. If missing, Blockly will disappear! */
+    #blocklyDiv { height: 500px; max-width: 800px; margin: 0 auto; border: 1px solid #ccc; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
   </style>
 </head>
 <body>
+  <div class="header">
+    <div>
+      <button id="connectBtn">Connect to EV3</button>
+      <span id="status">Status: Disconnected</span>
+    </div>
+    <button id="runBtn" disabled>Run Blocks ▶</button>
+  </div>
+
   <div id="blocklyDiv"></div>
 
   <xml id="toolbox" style="display: none">
-   <category name="EV3 Robot" colour="230">
-  <block type="ev3_beep"></block>
-  <block type="ev3_wait"></block>
-  <block type="ev3_motor_custom">
-    <value name="SPEED">
-      <shadow type="math_number">
-        <field name="NUM">50</field>
-      </shadow>
-    </value>
-  </block>
-</category>
+    <category name="EV3 Robot" colour="230">
+      <block type="ev3_beep"></block>
+      <block type="ev3_wait"></block>
+      <block type="ev3_motor_custom">
+        <value name="SPEED">
+          <shadow type="math_number">
+            <field name="NUM">50</field>
+          </shadow>
+        </value>
+      </block>
+    </category>
     <category name="Logic" colour="210">
       <block type="controls_if"></block>
       <block type="logic_compare"></block>
