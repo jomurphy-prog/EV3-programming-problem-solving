@@ -2,13 +2,13 @@ let port;
 let writer;
 let reader;
 
-// Variables for Two-Way Communication
 let msgIdCounter = 1;
 const pendingRequests = new Map();
 let inputBuffer = new Uint8Array(0);
 
 const connectBtn = document.getElementById('connectBtn');
 const runBtn = document.getElementById('runBtn');
+const uploadBtn = document.getElementById('uploadBtn'); // NEW BUTTON
 const statusDiv = document.getElementById('status');
 
 // --- 1. TWO-WAY BLUETOOTH SERIAL CONNECTION ---
@@ -17,13 +17,12 @@ connectBtn.addEventListener('click', async () => {
     port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200 });
     writer = port.writable.getWriter();
-    
-    // Start the continuous background listener
     listenToPort();
 
     statusDiv.innerText = "Status: Connected and Listening!";
     statusDiv.style.color = "green";
     runBtn.disabled = false;
+    uploadBtn.disabled = false; // Enable Upload Button
     connectBtn.disabled = true;
   } catch (error) {
     statusDiv.innerText = "Status: Connection Failed";
@@ -32,7 +31,7 @@ connectBtn.addEventListener('click', async () => {
   }
 });
 
-// The Background Listener Loop
+// UPGRADED: Universal Background Listener Loop
 async function listenToPort() {
   reader = port.readable.getReader();
   try {
@@ -40,44 +39,31 @@ async function listenToPort() {
       const { value, done } = await reader.read();
       if (done) break;
 
-      // Bluetooth data sometimes arrives in chopped-up chunks. 
-      // We append incoming bytes to a buffer so we can parse full messages.
       let temp = new Uint8Array(inputBuffer.length + value.length);
       temp.set(inputBuffer);
       temp.set(value, inputBuffer.length);
       inputBuffer = temp;
 
-      // Check if we have enough bytes for a complete EV3 message
       while (inputBuffer.length >= 2) {
         let msgLength = inputBuffer[0] + (inputBuffer[1] << 8);
-        let totalLength = msgLength + 2; // +2 for the length bytes themselves
+        let totalLength = msgLength + 2; 
 
         if (inputBuffer.length >= totalLength) {
-          // We have a complete message from the EV3!
           let msg = inputBuffer.slice(0, totalLength);
-          inputBuffer = inputBuffer.slice(totalLength); // Remove from buffer
+          inputBuffer = inputBuffer.slice(totalLength); 
 
           if (msg.length >= 5) {
             let msgId = msg[2] + (msg[3] << 8);
-            let status = msg[4]; // 0x02 means SUCCESS
-
-            // If this message ID matches a question we asked, resolve the Promise
+            
+            // Just hand the ENTIRE message array back to whoever asked for it
             if (pendingRequests.has(msgId)) {
               let resolve = pendingRequests.get(msgId);
               pendingRequests.delete(msgId);
-
-              // Data payload starts at byte 5. READY_SI returns a 4-byte Float.
-              if (status === 0x02 && msg.length >= 9) {
-                let view = new DataView(msg.buffer, msg.byteOffset, msg.byteLength);
-                let sensorVal = view.getFloat32(5, true); // true = little-endian
-                resolve(sensorVal);
-              } else {
-                resolve(0); // Fail safe
-              }
+              resolve(msg); 
             }
           }
         } else {
-          break; // Waiting for more bytes to arrive
+          break; 
         }
       }
     }
@@ -88,7 +74,6 @@ async function listenToPort() {
   }
 }
 
-// Helper: Send Fire-and-Forget Commands
 async function sendEV3Command(byteArray) {
   if (!writer) return;
   try {
@@ -99,32 +84,126 @@ async function sendEV3Command(byteArray) {
   }
 }
 
-// Helper: Ask a Question and Wait for the Reply
+// UPGRADED: Sensor Reader
 async function readSensor(portIndex) {
-  return new Promise(async (resolve) => {
-    let msgId = msgIdCounter++;
+  let msgId = msgIdCounter++;
+  let bytecode = new Uint8Array([
+    0x0D, 0x00, msgId & 0xFF, (msgId >> 8) & 0xFF, 0x00, 0x04, 0x00, 0x99, 0x1D, 0x00, portIndex, 0x00, 0x00, 0x01, 0x60 
+  ]);
+
+  let msg = await new Promise(resolve => {
     pendingRequests.set(msgId, resolve);
-
-    let bytecode = new Uint8Array([
-      0x0D, 0x00, // Payload Length (13 bytes)
-      msgId & 0xFF, (msgId >> 8) & 0xFF, // Attach our unique Message ID
-      0x00, // Command Type: DIRECT_COMMAND_REPLY (Require answer)
-      0x04, 0x00, // Allocate 4 bytes of memory for the EV3's answer
-      // opINPUT_DEVICE, READY_SI, Layer 0, Port, Type 0, Mode 0, 1 Value, Memory Index 0
-      0x99, 0x1D, 0x00, portIndex, 0x00, 0x00, 0x01, 0x60 
-    ]);
-
-    await sendEV3Command(bytecode);
-
-    // If the EV3 doesn't answer within 1 second, time out so the code doesn't freeze
-    setTimeout(() => {
-      if (pendingRequests.has(msgId)) {
-        pendingRequests.delete(msgId);
-        resolve(0); 
-      }
-    }, 1000);
+    setTimeout(() => { if (pendingRequests.has(msgId)) { pendingRequests.delete(msgId); resolve(null); } }, 1000);
   });
+  
+  await sendEV3Command(bytecode);
+
+  // Parse the float from the universal raw message
+  if (msg && msg[4] === 0x02 && msg.length >= 9) {
+    let view = new DataView(msg.buffer, msg.byteOffset, msg.byteLength);
+    return view.getFloat32(5, true); 
+  }
+  return 0;
 }
+
+// --- NEW: THE FILE UPLOAD PROTOCOL ---
+uploadBtn.addEventListener('click', async () => {
+  try {
+    statusDiv.innerText = "Status: Uploading...";
+    statusDiv.style.color = "blue";
+    
+    // The dummy file we want to upload
+    const filename = "HelloWeb.txt";
+    const textData = "Congratulations! You successfully wrote a file to the EV3 over Web Serial!";
+    
+    // EV3 requires paths to look like: ../prjs/FolderName/FileName
+    // We must end the string with a null byte (\0)
+    const ev3Path = "../prjs/BrkProg_SAVE/" + filename + "\0";
+    
+    const pathBytes = new TextEncoder().encode(ev3Path);
+    const dataBytes = new TextEncoder().encode(textData);
+    const fileSize = dataBytes.length;
+
+    // --- STEP 1: BEGIN_DOWNLOAD ---
+    let msgId1 = msgIdCounter++;
+    let beginLen = 2 + 1 + 1 + 4 + pathBytes.length; // MsgID(2) + CmdType(1) + SysCmd(1) + Size(4) + PathLength
+    let beginCmd = new Uint8Array(2 + beginLen);
+    beginCmd[0] = beginLen & 0xFF;
+    beginCmd[1] = (beginLen >> 8) & 0xFF;
+    beginCmd[2] = msgId1 & 0xFF;
+    beginCmd[3] = (msgId1 >> 8) & 0xFF;
+    beginCmd[4] = 0x01; // System Command Reply
+    beginCmd[5] = 0x92; // BEGIN_DOWNLOAD
+    beginCmd[6] = fileSize & 0xFF;
+    beginCmd[7] = (fileSize >> 8) & 0xFF;
+    beginCmd[8] = (fileSize >> 16) & 0xFF;
+    beginCmd[9] = (fileSize >> 24) & 0xFF;
+    beginCmd.set(pathBytes, 10);
+
+    let beginReplyPromise = new Promise(resolve => {
+      pendingRequests.set(msgId1, resolve);
+      setTimeout(() => resolve(null), 2000);
+    });
+
+    await sendEV3Command(beginCmd);
+    let beginReply = await beginReplyPromise;
+
+    // Verify Success (0x03 = System Reply, 0x00 = Success)
+    if (!beginReply || beginReply[4] !== 0x03 || beginReply[6] !== 0x00) {
+      throw new Error("BEGIN_DOWNLOAD Failed.");
+    }
+    
+    // Extract the golden File Handle!
+    let fileHandle = beginReply[7]; 
+
+    // --- STEP 2: CONTINUE_DOWNLOAD ---
+    let msgId2 = msgIdCounter++;
+    let contLen = 2 + 1 + 1 + 1 + dataBytes.length; // MsgID(2) + CmdType(1) + SysCmd(1) + Handle(1) + DataLength
+    let contCmd = new Uint8Array(2 + contLen);
+    contCmd[0] = contLen & 0xFF;
+    contCmd[1] = (contLen >> 8) & 0xFF;
+    contCmd[2] = msgId2 & 0xFF;
+    contCmd[3] = (msgId2 >> 8) & 0xFF;
+    contCmd[4] = 0x01; // System Command Reply
+    contCmd[5] = 0x93; // CONTINUE_DOWNLOAD
+    contCmd[6] = fileHandle;
+    contCmd.set(dataBytes, 7);
+
+    let contReplyPromise = new Promise(resolve => {
+      pendingRequests.set(msgId2, resolve);
+      setTimeout(() => resolve(null), 2000);
+    });
+
+    await sendEV3Command(contCmd);
+    let contReply = await contReplyPromise;
+
+    if (!contReply || contReply[4] !== 0x03 || contReply[6] !== 0x00) {
+      throw new Error("CONTINUE_DOWNLOAD Failed.");
+    }
+
+    // --- STEP 3: CLOSE_FILEHANDLE ---
+    let msgId3 = msgIdCounter++;
+    let closeLen = 5; // MsgID(2) + CmdType(1) + SysCmd(1) + Handle(1)
+    let closeCmd = new Uint8Array(2 + closeLen);
+    closeCmd[0] = closeLen & 0xFF;
+    closeCmd[1] = (closeLen >> 8) & 0xFF;
+    closeCmd[2] = msgId3 & 0xFF;
+    closeCmd[3] = (msgId3 >> 8) & 0xFF;
+    closeCmd[4] = 0x01; 
+    closeCmd[5] = 0x98; // CLOSE_FILEHANDLE
+    closeCmd[6] = fileHandle;
+
+    await sendEV3Command(closeCmd); // Fire and forget the close command
+
+    statusDiv.innerText = "Status: File Uploaded Successfully!";
+    statusDiv.style.color = "green";
+
+  } catch (err) {
+    statusDiv.innerText = "Status: Upload Error - " + err.message;
+    statusDiv.style.color = "red";
+    console.error(err);
+  }
+});
 
 // --- 2. DEFINE CUSTOM BLOCKS ---
 Blockly.Blocks['ev3_beep'] = {
