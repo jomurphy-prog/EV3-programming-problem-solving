@@ -1,27 +1,24 @@
-let ev3Device; // Changed from port/writer to a single HID device variable
+let port;
+let writer;
 
 const connectBtn = document.getElementById('connectBtn');
 const runBtn = document.getElementById('runBtn');
 const statusDiv = document.getElementById('status');
 
-// --- 1. WEB HID CONNECTION ---
+// --- 1. BLUETOOTH SERIAL CONNECTION ---
 connectBtn.addEventListener('click', async () => {
   try {
-    // Request access to the EV3 using WebHID instead of Web Serial
-    // LEGO Vendor ID is 0x0694
-    const devices = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x0694 }] });
+    // Request a generic serial port (no USB filters, so BT COM ports show up)
+    port = await navigator.serial.requestPort();
     
-    if (devices.length > 0) {
-      ev3Device = devices[0];
-      
-      // Open the HID connection
-      await ev3Device.open();
-      
-      statusDiv.innerText = "Status: Connected via WebHID!";
-      statusDiv.style.color = "green";
-      runBtn.disabled = false;
-      connectBtn.disabled = true;
-    }
+    // EV3 Bluetooth SPP uses a baud rate of 115200
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    
+    statusDiv.innerText = "Status: Connected via Bluetooth COM!";
+    statusDiv.style.color = "green";
+    runBtn.disabled = false;
+    connectBtn.disabled = true;
   } catch (error) {
     statusDiv.innerText = "Status: Connection Failed";
     statusDiv.style.color = "red";
@@ -31,20 +28,14 @@ connectBtn.addEventListener('click', async () => {
 
 // Helper function to handle sending the data
 async function sendEV3Command(byteArray) {
-  if (!ev3Device) return;
-  
+  if (!writer) return;
   try {
-    // WebHID uses sendReport(reportId, data). 
-    // The EV3 does not use numbered Report IDs, so we send 0.
-    await ev3Device.sendReport(0, byteArray);
-    
-    // Tiny delay to ensure the EV3 processes sequential commands cleanly
+    await writer.write(byteArray);
     await new Promise(resolve => setTimeout(resolve, 50)); 
   } catch (error) {
-    console.error("Error sending HID report:", error);
+    console.error("Error writing to serial:", error);
   }
 }
-
 // --- 2. DEFINE CUSTOM BLOCKS ---
 Blockly.Blocks['ev3_beep'] = {
   init: function() {
