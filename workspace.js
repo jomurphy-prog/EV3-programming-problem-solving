@@ -117,7 +117,7 @@ uploadBtn.addEventListener('click', async () => {
     statusDiv.innerText = "Status: Uploading (Allocating Space)...";
     statusDiv.style.color = "blue";
     
-    const filename = "HelloWeb.txt";
+    const filename = "HelloWeb.rbf";
     const textData = "Congratulations! You successfully wrote a file to the EV3 over Web Serial!";
     const ev3Path = "../prjs/BrkProg_SAVE/" + filename + "\0";
     
