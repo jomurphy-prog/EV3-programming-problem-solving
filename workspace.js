@@ -92,25 +92,32 @@ generator.forBlock['ev3_wait'] = function(block) {
 
 generator.forBlock['ev3_motor_custom'] = function(block) {
   const port = block.getFieldValue('PORT');
-  // Grab whatever math/number block is plugged into the SPEED socket. Default to 50.
   const speedCode = generator.valueToCode(block, 'SPEED', javascript.Order.NONE) || '50';
   
-  // We wrap the dynamic payload generation in an Immediately Invoked Function Expression
-  // so the speed calculation logic happens safely at runtime.
   return `await (async () => {
-    // Ensure speed is an integer between -100 and 100
     let speed = Math.max(-100, Math.min(100, Math.round(${speedCode})));
-    // Convert signed negative numbers to an unsigned byte for the EV3
     let speedByte = speed < 0 ? 256 + speed : speed;
     
+    // Using opOUTPUT_TIME_SPEED (0xAF) to run for exactly 1 second (1000ms)
+    // This prevents the EV3 Bluetooth watchdog from instantly stopping the motor
     let bytecode = new Uint8Array([
-      0x0D, 0x00, // Length
+      0x10, 0x00, // Length: 16 bytes
       0x00, 0x00, // MsgID
       0x80, 0x00, 0x00, // Direct Command No Reply
-      0xA4, 0x00, ${port}, 0x81, speedByte, // Set Speed (opOUTPUT_SPEED)
-      0xA6, 0x00, ${port} // Start Motor (opOUTPUT_START)
+      0xAF, // opOUTPUT_TIME_SPEED
+      0x00, // LAYER
+      ${port}, // PORT
+      0x81, speedByte, // SPEED
+      0x00, // STEP1 (Ramp up 0ms)
+      0x82, 0xE8, 0x03, // STEP2 (Constant 1000ms)
+      0x00, // STEP3 (Ramp down 0ms)
+      0x01  // BRAKE (1 = Brake, 0 = Coast)
     ]);
+    
     await sendCommand(bytecode);
+    
+    // Tell JavaScript to wait 1 second while the physical motor runs
+    await new Promise(resolve => setTimeout(resolve, 1000));
   })();\n`;
 };
 
