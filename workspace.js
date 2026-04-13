@@ -112,6 +112,7 @@ async function readSensor(portIndex) {
 }
 
 // --- NEW: THE FILE UPLOAD PROTOCOL ---
+// --- NEW: THE FILE UPLOAD PROTOCOL ---
 uploadBtn.addEventListener('click', async () => {
   try {
     statusDiv.innerText = "Status: Uploading...";
@@ -125,7 +126,7 @@ uploadBtn.addEventListener('click', async () => {
     const dataBytes = new TextEncoder().encode(textData);
     const fileSize = dataBytes.length;
 
-    // STEP 1: BEGIN_DOWNLOAD
+    // --- STEP 1: BEGIN_DOWNLOAD ---
     let msgId1 = msgIdCounter++;
     let beginLen = 2 + 1 + 1 + 4 + pathBytes.length; 
     let beginCmd = new Uint8Array(2 + beginLen);
@@ -150,12 +151,13 @@ uploadBtn.addEventListener('click', async () => {
     let beginReply = await beginReplyPromise;
 
     if (!beginReply || beginReply[4] !== 0x03 || beginReply[6] !== 0x00) {
-      throw new Error("BEGIN_DOWNLOAD Failed.");
+      let errCode = beginReply ? "0x" + beginReply[6].toString(16).toUpperCase() : "null";
+      throw new Error(`BEGIN_DOWNLOAD Failed. Status: ${errCode}`);
     }
     
     let fileHandle = beginReply[7]; 
 
-    // STEP 2: CONTINUE_DOWNLOAD
+    // --- STEP 2: CONTINUE_DOWNLOAD ---
     let msgId2 = msgIdCounter++;
     let contLen = 2 + 1 + 1 + 1 + dataBytes.length; 
     let contCmd = new Uint8Array(2 + contLen);
@@ -176,11 +178,13 @@ uploadBtn.addEventListener('click', async () => {
     await sendEV3Command(contCmd);
     let contReply = await contReplyPromise;
 
-    if (!contReply || contReply[4] !== 0x03 || contReply[6] !== 0x00) {
-      throw new Error("CONTINUE_DOWNLOAD Failed.");
+    // FIX IS HERE: Accept 0x00 (Success) AND 0x08 (End of File)
+    if (!contReply || contReply[4] !== 0x03 || (contReply[6] !== 0x00 && contReply[6] !== 0x08)) {
+      let errCode = contReply ? "0x" + contReply[6].toString(16).toUpperCase() : "null";
+      throw new Error(`CONTINUE_DOWNLOAD Failed. Status: ${errCode}`);
     }
 
-    // STEP 3: CLOSE_FILEHANDLE
+    // --- STEP 3: CLOSE_FILEHANDLE ---
     let msgId3 = msgIdCounter++;
     let closeLen = 5; 
     let closeCmd = new Uint8Array(2 + closeLen);
