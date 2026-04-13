@@ -112,10 +112,9 @@ async function readSensor(portIndex) {
 }
 
 // --- NEW: THE FILE UPLOAD PROTOCOL ---
-// --- NEW: THE FILE UPLOAD PROTOCOL ---
 uploadBtn.addEventListener('click', async () => {
   try {
-    statusDiv.innerText = "Status: Uploading...";
+    statusDiv.innerText = "Status: Uploading (Allocating Space)...";
     statusDiv.style.color = "blue";
     
     const filename = "HelloWeb.txt";
@@ -150,12 +149,20 @@ uploadBtn.addEventListener('click', async () => {
     await sendEV3Command(beginCmd);
     let beginReply = await beginReplyPromise;
 
+    // 0x05 means the EV3 threw a System Error. 
+    if (beginReply && beginReply[4] === 0x05) {
+      throw new Error(`BEGIN_DOWNLOAD rejected. EV3 Error Code: 0x${beginReply[6].toString(16).toUpperCase()}`);
+    }
     if (!beginReply || beginReply[4] !== 0x03 || beginReply[6] !== 0x00) {
-      let errCode = beginReply ? "0x" + beginReply[6].toString(16).toUpperCase() : "null";
-      throw new Error(`BEGIN_DOWNLOAD Failed. Status: ${errCode}`);
+      throw new Error("BEGIN_DOWNLOAD Failed entirely.");
     }
     
     let fileHandle = beginReply[7]; 
+
+    // *** CRITICAL HARDWARE DELAY ***
+    // Give the EV3 flash memory 150ms to actually open the file
+    statusDiv.innerText = "Status: Uploading (Writing Data)...";
+    await new Promise(resolve => setTimeout(resolve, 150));
 
     // --- STEP 2: CONTINUE_DOWNLOAD ---
     let msgId2 = msgIdCounter++;
@@ -178,13 +185,19 @@ uploadBtn.addEventListener('click', async () => {
     await sendEV3Command(contCmd);
     let contReply = await contReplyPromise;
 
-    // FIX IS HERE: Accept 0x00 (Success) AND 0x08 (End of File)
+    if (contReply && contReply[4] === 0x05) {
+      throw new Error(`CONTINUE_DOWNLOAD rejected. EV3 Error Code: 0x${contReply[6].toString(16).toUpperCase()}`);
+    }
+    // Accept 0x00 (Success) and 0x08 (End of File)
     if (!contReply || contReply[4] !== 0x03 || (contReply[6] !== 0x00 && contReply[6] !== 0x08)) {
-      let errCode = contReply ? "0x" + contReply[6].toString(16).toUpperCase() : "null";
-      throw new Error(`CONTINUE_DOWNLOAD Failed. Status: ${errCode}`);
+      throw new Error("CONTINUE_DOWNLOAD Failed entirely.");
     }
 
+    // *** CRITICAL HARDWARE DELAY ***
+    await new Promise(resolve => setTimeout(resolve, 150));
+
     // --- STEP 3: CLOSE_FILEHANDLE ---
+    statusDiv.innerText = "Status: Uploading (Finalizing)...";
     let msgId3 = msgIdCounter++;
     let closeLen = 5; 
     let closeCmd = new Uint8Array(2 + closeLen);
@@ -202,7 +215,7 @@ uploadBtn.addEventListener('click', async () => {
     statusDiv.style.color = "green";
 
   } catch (err) {
-    statusDiv.innerText = "Status: Upload Error - " + err.message;
+    statusDiv.innerText = "Status: " + err.message;
     statusDiv.style.color = "red";
     console.error(err);
   }
