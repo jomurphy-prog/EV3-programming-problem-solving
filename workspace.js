@@ -1,21 +1,27 @@
-let port;
-let writer;
+let ev3Device; // Changed from port/writer to a single HID device variable
 
 const connectBtn = document.getElementById('connectBtn');
 const runBtn = document.getElementById('runBtn');
 const statusDiv = document.getElementById('status');
 
-// --- 1. WEB SERIAL CONNECTION ---
+// --- 1. WEB HID CONNECTION ---
 connectBtn.addEventListener('click', async () => {
   try {
-    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x0694 }] });
-    await port.open({ baudRate: 115200 });
-    writer = port.writable.getWriter();
+    // Request access to the EV3 using WebHID instead of Web Serial
+    // LEGO Vendor ID is 0x0694
+    const devices = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x0694 }] });
     
-    statusDiv.innerText = "Status: Connected!";
-    statusDiv.style.color = "green";
-    runBtn.disabled = false;
-    connectBtn.disabled = true;
+    if (devices.length > 0) {
+      ev3Device = devices[0];
+      
+      // Open the HID connection
+      await ev3Device.open();
+      
+      statusDiv.innerText = "Status: Connected via WebHID!";
+      statusDiv.style.color = "green";
+      runBtn.disabled = false;
+      connectBtn.disabled = true;
+    }
   } catch (error) {
     statusDiv.innerText = "Status: Connection Failed";
     statusDiv.style.color = "red";
@@ -25,9 +31,18 @@ connectBtn.addEventListener('click', async () => {
 
 // Helper function to handle sending the data
 async function sendEV3Command(byteArray) {
-  if (!writer) return;
-  await writer.write(byteArray);
-  await new Promise(resolve => setTimeout(resolve, 50)); 
+  if (!ev3Device) return;
+  
+  try {
+    // WebHID uses sendReport(reportId, data). 
+    // The EV3 does not use numbered Report IDs, so we send 0.
+    await ev3Device.sendReport(0, byteArray);
+    
+    // Tiny delay to ensure the EV3 processes sequential commands cleanly
+    await new Promise(resolve => setTimeout(resolve, 50)); 
+  } catch (error) {
+    console.error("Error sending HID report:", error);
+  }
 }
 
 // --- 2. DEFINE CUSTOM BLOCKS ---
