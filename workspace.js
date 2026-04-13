@@ -123,24 +123,32 @@ ev3Compiler.forBlock['ev3_motor_custom'] = function(block) {
 ev3Compiler.forBlock['ev3_touch'] = function() { return ""; }; 
 
 // Helper Function: Wraps raw instructions in the strict EV3 .rbf 36-byte Blueprint
+// Helper Function: Wraps raw instructions in the strict EV3 .rbf 36-byte Blueprint
 function compileToRBF(instructions) {
   const prefix = new Uint8Array([
     0x6C, 0x6D, 0x73, 0x32, 0x30, 0x31, 0x32, 0x00, // "lms2012\0" (Magic Signature)
     0x00, 0x00, 0x00, 0x00, // Total file size placeholder (index 8-11)
     0x01, 0x04,             // Firmware Version 1.04
     0x01, 0x00,             // Number of objects (1)
-    0x00, 0x00, 0x00, 0x00, // Global memory allocated (0)
+    
+    // FIX: Allocate 32 bytes (0x20) of Global Memory instead of 0
+    0x20, 0x00, 0x00, 0x00, 
+    
     0x18, 0x00, 0x00, 0x00, // Offset to Object 0 from start of file (24 bytes)
     // --- Start of Object 0 Header ---
     0x0C, 0x00, 0x00, 0x00, // Offset to start of instructions (12 bytes)
     0x00, 0x00,             // Owner object
     0x01, 0x00,             // Trigger count
-    0x00, 0x00, 0x00, 0x00  // Local memory allocated (0)
+    
+    // FIX: Allocate 32 bytes (0x20) of Local Memory instead of 0
+    0x20, 0x00, 0x00, 0x00  
   ]);
   
   const totalSize = prefix.length + instructions.length + 1; // +1 for the exit byte
-  prefix[8] = totalSize & 0xFF; prefix[9] = (totalSize >> 8) & 0xFF;
-  prefix[10] = (totalSize >> 16) & 0xFF; prefix[11] = (totalSize >> 24) & 0xFF;
+  prefix[8] = totalSize & 0xFF; 
+  prefix[9] = (totalSize >> 8) & 0xFF;
+  prefix[10] = (totalSize >> 16) & 0xFF; 
+  prefix[11] = (totalSize >> 24) & 0xFF;
   
   const rbf = new Uint8Array(totalSize);
   rbf.set(prefix, 0);
