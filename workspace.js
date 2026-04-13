@@ -104,7 +104,7 @@ generator.forBlock['ev3_motor_custom'] = function(block) {
     let speedByte = speed < 0 ? 256 + speed : speed;
     
     let bytecode = new Uint8Array([
-      0x0F, 0x00, // Length
+      0x0D, 0x00, // Length
       0x00, 0x00, // MsgID
       0x80, 0x00, 0x00, // Direct Command No Reply
       0xA4, 0x00, ${port}, 0x81, speedByte, // Set Speed (opOUTPUT_SPEED)
