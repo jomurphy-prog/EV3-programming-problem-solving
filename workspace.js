@@ -123,7 +123,6 @@ ev3Compiler.forBlock['ev3_motor_custom'] = function(block) {
 ev3Compiler.forBlock['ev3_touch'] = function() { return ""; }; 
 
 // Helper Function: Wraps raw instructions in the strict EV3 .rbf 36-byte Blueprint
-// Helper Function: Wraps raw instructions in the strict EV3 .rbf 36-byte Blueprint
 function compileToRBF(instructions) {
   const prefix = new Uint8Array([
     0x6C, 0x6D, 0x73, 0x32, 0x30, 0x31, 0x32, 0x00, // "lms2012\0" (Magic Signature)
@@ -136,7 +135,7 @@ function compileToRBF(instructions) {
     
     0x18, 0x00, 0x00, 0x00, // Offset to Object 0 from start of file (24 bytes)
     // --- Start of Object 0 Header ---
-    0x0C, 0x00, 0x00, 0x00, // Offset to start of instructions (12 bytes)
+    0x24, 0x00, 0x00, 0x00, // Offset to start of instructions (12 bytes)
     0x00, 0x00,             // Owner object
     0x01, 0x00,             // Trigger count
     
