@@ -176,12 +176,14 @@ uploadBtn.addEventListener('click', async () => {
   try {
     statusDiv.innerText = "Status: Compiling Code..."; statusDiv.style.color = "blue";
     
-    // TEMPORARY DEBUGGING: Force an empty payload to test the Header Blueprint
-    statusDiv.innerText = "Status: Compiling EMPTY debug file...";
+    // 1. Compile the blocks into a string of Hex values using our new generator
+    const compiledString = ev3Compiler.workspaceToCode(workspace);
+    if (!compiledString || compiledString.trim() === "") { throw new Error("Workspace is empty!"); }
     
-    // We send zero instructions. The compileToRBF function will just add the 0x0A exit byte.
-    const rawInstructions = new Uint8Array([]);
-    
+    // 2. Convert string to a Javascript array, then to a Uint8Array
+    const byteStringArray = compiledString.split(',').filter(s => s.trim().length > 0);
+    const rawInstructions = new Uint8Array(byteStringArray.map(s => parseInt(s.trim(), 16)));
+        
     // 3. Wrap instructions in the RBF Blueprint
     const dataBytes = compileToRBF(rawInstructions);
     const fileSize = dataBytes.length;
