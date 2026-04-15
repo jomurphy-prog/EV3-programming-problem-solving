@@ -126,24 +126,23 @@ ev3Compiler.forBlock['ev3_touch'] = function() { return ""; };
 function compileToRBF(instructions) {
   const prefix = new Uint8Array([
     0x6C, 0x6D, 0x73, 0x32, 0x30, 0x31, 0x32, 0x00, // "lms2012\0" (Magic Signature)
-    0x00, 0x00, 0x00, 0x00, // Total file size placeholder (index 8-11)
-    0x04, 0x01,             // Firmware Version 1.04
+    0x00, 0x00, 0x00, 0x00, // Total file size placeholder
+    0x04, 0x01,             // Firmware Version 1.04 
     0x01, 0x00,             // Number of objects (1)
-    
-    // FIX: Allocate 32 bytes (0x20) of Global Memory instead of 0
-    0x20, 0x00, 0x00, 0x00, 
-    
-    0x18, 0x00, 0x00, 0x00, // Offset to Object 0 from start of file (24 bytes)
+    0x20, 0x00, 0x00, 0x00, // Global memory allocated (32 bytes)
+    0x18, 0x00, 0x00, 0x00, // Offset to Object 0 (24 bytes)
+
     // --- Start of Object 0 Header ---
-    0x24, 0x00, 0x00, 0x00, // Offset to start of instructions (12 bytes)
+    0x24, 0x00, 0x00, 0x00, // Offset to start of instructions (36 bytes)
     0x00, 0x00,             // Owner object
-    0x01, 0x00,             // Trigger count
     
-    // FIX: Allocate 32 bytes (0x20) of Local Memory instead of 0
-    0x20, 0x00, 0x00, 0x00  
+    // FIX: Trigger count MUST be 0. Otherwise it expects hardware trigger data!
+    0x00, 0x00,             
+    
+    0x20, 0x00, 0x00, 0x00  // Local memory allocated (32 bytes)
   ]);
   
-  const totalSize = prefix.length + instructions.length + 1; // +1 for the exit byte
+  const totalSize = prefix.length + instructions.length + 1; 
   prefix[8] = totalSize & 0xFF; 
   prefix[9] = (totalSize >> 8) & 0xFF;
   prefix[10] = (totalSize >> 16) & 0xFF; 
@@ -152,7 +151,7 @@ function compileToRBF(instructions) {
   const rbf = new Uint8Array(totalSize);
   rbf.set(prefix, 0);
   rbf.set(instructions, prefix.length);
-  rbf[totalSize - 1] = 0x0A; // opOBJECT_END (Tells EV3 the program is finished)
+  rbf[totalSize - 1] = 0x0A; // opOBJECT_END
   
   return rbf;
 }
