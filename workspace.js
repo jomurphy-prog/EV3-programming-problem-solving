@@ -122,40 +122,38 @@ ev3Compiler.forBlock['ev3_motor_custom'] = function(block) {
 // We ignore sensors and logic blocks for the simple linear compiler
 ev3Compiler.forBlock['ev3_touch'] = function() { return ""; }; 
 
-// Helper Function: Wraps raw instructions in the strict EV3 .rbf 36-byte Blueprint
+// Helper Function: Wraps raw instructions in the strict EV3 .rbf 28-byte Blueprint
 function compileToRBF(instructions) {
   const prefix = new Uint8Array([
-    0x6C, 0x6D, 0x73, 0x32, 0x30, 0x31, 0x32, 0x00, // "lms2012\0" (Magic Signature)
-    0x00, 0x00, 0x00, 0x00, // Total file size placeholder
-    0x04, 0x01,             // Firmware Version 1.04 
-    0x01, 0x00,             // Number of objects (1)
-    0x20, 0x00, 0x00, 0x00, // Global memory allocated (32 bytes)
-    0x18, 0x00, 0x00, 0x00, // Offset to Object 0 (24 bytes)
+    0x4C, 0x45, 0x47, 0x4F, // "LEGO" (The Magic Signature!)
+    0x00, 0x00, 0x00, 0x00, // Total file size placeholder (index 4-7)
+    0x04, 0x01,             // Firmware Version 1.04 (index 8-9)
+    0x01, 0x00,             // Number of objects (1) (index 10-11)
+    0x20, 0x00, 0x00, 0x00, // Global memory allocated (32 bytes) (index 12-15)
 
     // --- Start of Object 0 Header ---
-    0x24, 0x00, 0x00, 0x00, // Offset to start of instructions (36 bytes)
-    0x00, 0x00,             // Owner object
-    
-    // FIX: Trigger count MUST be 0. Otherwise it expects hardware trigger data!
-    0x00, 0x00,             
-    
-    0x20, 0x00, 0x00, 0x00  // Local memory allocated (32 bytes)
+    0x1C, 0x00, 0x00, 0x00, // Offset to start of instructions (28 bytes) (index 16-19)
+    0x00, 0x00,             // Owner object (index 20-21)
+    0x00, 0x00,             // Trigger count (index 22-23)
+    0x20, 0x00, 0x00, 0x00  // Local memory allocated (32 bytes) (index 24-27)
   ]);
   
+  // Calculate total size (Header + Code + 1 Exit Byte)
   const totalSize = prefix.length + instructions.length + 1; 
-  prefix[8] = totalSize & 0xFF; 
-  prefix[9] = (totalSize >> 8) & 0xFF;
-  prefix[10] = (totalSize >> 16) & 0xFF; 
-  prefix[11] = (totalSize >> 24) & 0xFF;
+  
+  // Inject the 32-bit total file size into bytes 4-7
+  prefix[4] = totalSize & 0xFF; 
+  prefix[5] = (totalSize >> 8) & 0xFF;
+  prefix[6] = (totalSize >> 16) & 0xFF; 
+  prefix[7] = (totalSize >> 24) & 0xFF;
   
   const rbf = new Uint8Array(totalSize);
   rbf.set(prefix, 0);
   rbf.set(instructions, prefix.length);
-  rbf[totalSize - 1] = 0x0A; // opOBJECT_END
+  rbf[totalSize - 1] = 0x0A; // opOBJECT_END (Tells EV3 the program is finished)
   
   return rbf;
 }
-
 // --- 5. INJECT BLOCKLY WORKSPACE ---
 const workspace = Blockly.inject('blocklyDiv', { toolbox: document.getElementById('toolbox'), scrollbars: true, trashcan: true });
 
