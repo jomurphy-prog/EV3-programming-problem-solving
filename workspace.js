@@ -188,7 +188,7 @@ uploadBtn.addEventListener('click', async () => {
     const dataBytes = compileToRBF(rawInstructions);
     const fileSize = dataBytes.length;
     
-    const filename = "MyProgram3.rbf";
+    const filename = "TestProg.rbf";
     const ev3Path = "../prjs/BrkProg_SAVE/" + filename + "\0";
     const pathBytes = new TextEncoder().encode(ev3Path);
 
