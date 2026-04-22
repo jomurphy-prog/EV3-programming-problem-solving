@@ -114,17 +114,19 @@ ev3Compiler.forBlock['ev3_beep'] = function(block) {
   return "0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, 0x96, "; 
 };
 
-// The Silent Wait Hack
+// The Canonical 32-Bit Memory Wait
 ev3Compiler.forBlock['ev3_wait'] = function(block) { 
-  // 0x94 (opSOUND), 0x01 (TONE), 0x00 (Vol 0), 0x82 0xE8 0x03 (1000Hz), 0x82 0xE8 0x03 (1000ms)
-  // 0x96 (opSOUND_READY) -> Halts the program thread until the silent sound finishes!
-  return "0x94, 0x01, 0x00, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, 0x96, "; 
+  // 0x85 (Wait), 0x83 (32-bit Constant Flag)
+  // 0xE8, 0x03, 0x00, 0x00 (1000ms as a 32-bit Little-Endian integer)
+  // 0x40 (Save to protected Local Variable 0)
+  // 0x86 (Ready), 0x40 (Halt thread until Local Variable 0 is reached)
+  return "0x85, 0x83, 0xE8, 0x03, 0x00, 0x00, 0x40, 0x86, 0x40, "; 
 };
 
-// The Bulletproof Motor Stop (Using explicit 1-byte constants to be safe)
+// The Explicit Motor Stop
 ev3Compiler.forBlock['ev3_motor_stop'] = function(block) { 
   const port = block.getFieldValue('PORT'); 
-  // 0xA3 (Stop), 0x00 (Layer), port, 0x81, 0x01 (Explicit 1-byte Brake command)
+  // 0xA3 (Stop), 0x00 (Layer), port, 0x81, 0x01 (Explicit 1-byte Brake)
   return `0xA3, 0x00, ${port}, 0x81, 0x01, `; 
 };
 
