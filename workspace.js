@@ -107,7 +107,11 @@ generator.forBlock['ev3_touch'] = function(block) { const port = block.getFieldV
 // This generator strictly outputs EV3 machine instructions separated by commas.
 const ev3Compiler = new Blockly.Generator('EV3Compiler');
 ev3Compiler.forBlock['ev3_beep'] = function(block) { return "0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, "; };
-ev3Compiler.forBlock['ev3_wait'] = function(block) { return "0x85, 0x82, 0xE8, 0x03, 0x60, 0x00, "; }; // opTIMER_WAIT for 1000ms
+ev3Compiler.forBlock['ev3_wait'] = function(block) { 
+  // 1. opTIMER_READ (0x87): Read current system clock into Global Var 0 (0x60, 0x00)
+  // 2. opTIMER_WAIT (0x85): Wait 1000ms (0x82, 0xE8, 0x03) relative to Global Var 0
+  return "0x87, 0x60, 0x00, 0x85, 0x82, 0xE8, 0x03, 0x60, 0x00, "; 
+};
 ev3Compiler.forBlock['ev3_motor_stop'] = function(block) { const port = block.getFieldValue('PORT'); return `0xA3, 0x00, ${port}, 0x01, `; };
 ev3Compiler.forBlock['ev3_motor_custom'] = function(block) { 
   const port = block.getFieldValue('PORT');
