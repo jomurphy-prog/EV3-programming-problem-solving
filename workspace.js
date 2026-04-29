@@ -1,225 +1,91 @@
-let port;
-let writer;
-let reader;
-
-let msgIdCounter = 1;
-const pendingRequests = new Map();
-let inputBuffer = new Uint8Array(0);
-
-const connectBtn = document.getElementById('connectBtn');
-const runBtn = document.getElementById('runBtn');
-const uploadBtn = document.getElementById('uploadBtn');
-const statusDiv = document.getElementById('status');
-
-// --- 1. TWO-WAY BLUETOOTH SERIAL CONNECTION ---
-connectBtn.addEventListener('click', async () => {
-  try {
-    port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
-    writer = port.writable.getWriter();
-    listenToPort(); 
-
-    statusDiv.innerText = "Status: Connected and Listening!";
-    statusDiv.style.color = "green";
-    runBtn.disabled = false;
-    uploadBtn.disabled = false; 
-    connectBtn.disabled = true;
-  } catch (error) {
-    statusDiv.innerText = "Status: Connection Failed";
-    statusDiv.style.color = "red";
-    console.error(error);
-  }
-});
-
-// Global variable to store the clean file name
+// ==========================================
+// 1. GLOBAL VARIABLES & UI SETUP
+// ==========================================
 let currentFileName = "MyProgram";
 
-const renameBtn = document.getElementById('renameBtn');
-const fileNameDisplay = document.getElementById('fileNameDisplay');
+// Wait for the HTML to fully load before attaching UI elements
+document.addEventListener('DOMContentLoaded', () => {
+  const renameBtn = document.getElementById('renameBtn');
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
 
-renameBtn.addEventListener('click', () => {
-  // 1. Ask the user for a name
-  let userInput = prompt("Enter a name for your EV3 program (no spaces):", currentFileName);
-  
-  // 2. If they clicked 'Cancel' or left it blank, do nothing
-  if (userInput !== null && userInput.trim() !== "") {
-    
-    // 3. Sanitize the input! 
-    // This regex removes spaces and special characters so the EV3 OS doesn't crash
-    let safeName = userInput.replace(/[^a-zA-Z0-9_-]/g, '');
-    
-    // 4. Fallback in case they typed ONLY special characters
-    if (safeName === "") {
-      safeName = "MyProgram";
-    }
-    
-    // 5. Update our variable and the UI display
-    currentFileName = safeName;
-    fileNameDisplay.innerText = currentFileName + ".rbf";
+  if (renameBtn && fileNameDisplay) {
+    renameBtn.addEventListener('click', () => {
+      let userInput = prompt("Enter a name for your EV3 program (no spaces):", currentFileName);
+      if (userInput !== null && userInput.trim() !== "") {
+        // Strip out dangerous characters
+        let safeName = userInput.replace(/[^a-zA-Z0-9_-]/g, '');
+        if (safeName === "") safeName = "MyProgram";
+        
+        currentFileName = safeName;
+        fileNameDisplay.innerText = currentFileName + ".rbf";
+      }
+    });
   }
 });
 
-async function listenToPort() {
-  reader = port.readable.getReader();
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      let temp = new Uint8Array(inputBuffer.length + value.length);
-      temp.set(inputBuffer);
-      temp.set(value, inputBuffer.length);
-      inputBuffer = temp;
-      while (inputBuffer.length >= 2) {
-        let msgLength = inputBuffer[0] + (inputBuffer[1] << 8);
-        let totalLength = msgLength + 2; 
-        if (inputBuffer.length >= totalLength) {
-          let msg = inputBuffer.slice(0, totalLength);
-          inputBuffer = inputBuffer.slice(totalLength); 
-          if (msg.length >= 5) {
-            let msgId = msg[2] + (msg[3] << 8);
-            if (pendingRequests.has(msgId)) {
-              let resolve = pendingRequests.get(msgId);
-              pendingRequests.delete(msgId);
-              resolve(msg); 
-            }
-          }
-        } else { break; }
-      }
-    }
-  } catch (e) {
-    console.error("Reader loop error:", e);
-  } finally {
-    reader.releaseLock();
-  }
-}
+// ==========================================
+// 2. BLOCKLY COMPILER SETUP
+// ==========================================
+const ev3Compiler = new Blockly.Generator('EV3');
 
-async function sendEV3Command(byteArray) {
-  if (!writer) return;
-  await writer.write(byteArray);
-  await new Promise(resolve => setTimeout(resolve, 50)); 
-}
-
-async function readSensor(portIndex) {
-  let msgId = msgIdCounter++;
-  let bytecode = new Uint8Array([ 0x0D, 0x00, msgId & 0xFF, (msgId >> 8) & 0xFF, 0x00, 0x04, 0x00, 0x99, 0x1D, 0x00, portIndex, 0x00, 0x00, 0x01, 0x60 ]);
-  let replyPromise = new Promise(resolve => {
-    pendingRequests.set(msgId, resolve);
-    setTimeout(() => { if (pendingRequests.has(msgId)) { pendingRequests.delete(msgId); resolve(null); } }, 1000);
-  });
-  await sendEV3Command(bytecode);
-  let msg = await replyPromise;
-  if (msg && msg[4] === 0x02 && msg.length >= 9) {
-    let view = new DataView(msg.buffer, msg.byteOffset, msg.byteLength);
-    return view.getFloat32(5, true); 
-  }
-  return 0;
-}
-
-// --- 2. DEFINE CUSTOM BLOCKS ---
-// (Unchanged from your previous version)
-Blockly.Blocks['ev3_beep'] = { init: function() { this.appendDummyInput().appendField("Play EV3 Beep"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(230); } };
-Blockly.Blocks['ev3_wait'] = { init: function() { this.appendDummyInput().appendField("Wait 1 Second"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(120); } };
-Blockly.Blocks['ev3_motor_custom'] = { init: function() { this.appendDummyInput().appendField("Start Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["A+B", "0x03"] ]), "PORT"); this.appendValueInput("SPEED").setCheck("Number").appendField("at speed"); this.setInputsInline(true); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
-Blockly.Blocks['ev3_motor_stop'] = { init: function() { this.appendDummyInput().appendField("Stop Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["All", "0x0F"] ]), "PORT"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
-Blockly.Blocks['ev3_touch'] = { init: function() { this.appendDummyInput().appendField("Touch Sensor on Port").appendField(new Blockly.FieldDropdown([ ["1", "0"], ["2", "1"], ["3", "2"], ["4", "3"] ]), "PORT"); this.setOutput(true, "Boolean"); this.setColour(210); } };
-// 1. The Sensor Logic Block
-Blockly.Blocks['ev3_sensor_logic'] = {
-  init: function() {
-    this.appendDummyInput()
-        .appendField("If Color Sensor Port")
-        .appendField(new Blockly.FieldDropdown([["1","0"], ["2","1"], ["3","2"], ["4","3"]]), "PORT")
-        .appendField("Reflected Light")
-        .appendField(new Blockly.FieldDropdown([["<","LT"], [">","GT"]]), "OPERATOR")
-        .appendField(new Blockly.FieldNumber(45, 0, 100), "THRESHOLD")
-        .appendField("%");
-    this.appendStatementInput("DO")
-        .setCheck(null)
-        .appendField("Do");
-    this.appendStatementInput("ELSE")
-        .setCheck(null)
-        .appendField("Else");
-    this.setPreviousStatement(true, null);
-    this.setNextStatement(true, null);
-    this.setColour(210);
-    this.setTooltip("Reads the color sensor and executes blocks based on the light percentage.");
-  }
+// Tells Blockly how to traverse down a stack of connected blocks
+ev3Compiler.scrub_ = function(block, code, opt_thisOnly) {
+  const nextBlock = block.nextConnection && block.nextConnection.targetBlock();
+  const nextCode = opt_thisOnly ? '' : ev3Compiler.blockToCode(nextBlock);
+  return code + nextCode; 
 };
 
-// 2. The Infinite Loop Block
-Blockly.Blocks['ev3_infinite_loop'] = {
-  init: function() {
-    this.appendDummyInput()
-        .appendField("Repeat Forever");
-    this.appendStatementInput("DO")
-        .setCheck(null);
-    this.setPreviousStatement(true, null);
-    // Notice: No Next Statement! A forever loop never moves to the next block.
-    this.setColour(120);
-    this.setTooltip("Repeats the blocks inside forever.");
-  }
-};
-
-// --- 3. GENERATORS (TETHERED JS) ---
-const generator = javascript.javascriptGenerator;
-generator.forBlock['ev3_beep'] = function(block) { return `await sendCommand(new Uint8Array([0x0F, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03]));\n`; };
-generator.forBlock['ev3_wait'] = function(block) { return `await new Promise(resolve => setTimeout(resolve, 1000));\n`; };
-generator.forBlock['ev3_motor_custom'] = function(block) { const portString = block.getFieldValue('PORT'); const speedCode = generator.valueToCode(block, 'SPEED', javascript.Order.NONE) || '50'; return `await (async () => { let portMask = parseInt("${portString}", 16); let speed = Math.max(-100, Math.min(100, Math.round(${speedCode}))); let speedByte = speed < 0 ? 256 + speed : speed; await sendCommand(new Uint8Array([0x0D, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0xA4, 0x00, portMask, 0x81, speedByte, 0xA6, 0x00, portMask])); })();\n`; };
-generator.forBlock['ev3_motor_stop'] = function(block) { const portString = block.getFieldValue('PORT'); return `await (async () => { let portMask = parseInt("${portString}", 16); await sendCommand(new Uint8Array([0x09, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0xA3, 0x00, portMask, 0x01])); })();\n`; };
-generator.forBlock['ev3_touch'] = function(block) { const port = block.getFieldValue('PORT'); const code = `(await readSensor(${port}) === 1)`; return [code, javascript.Order.ATOMIC]; };
-
-// --- NEW 4. GENERATORS (UNTETHERED HEX COMPILER) ---
-// This generator strictly outputs EV3 machine instructions separated by commas.
-const ev3Compiler = new Blockly.Generator('EV3Compiler');
-
-// Calculates 16-bit jump offsets for branching logic
+// Helper: Calculates 16-bit jump offsets (Handles Two's Complement for backward loops)
 function getOffsetHex(offset) {
-  // If the jump is backwards, use Two's Complement math
   let val = offset < 0 ? 65536 + offset : offset;
   let low = "0x" + (val & 0xFF).toString(16).padStart(2, '0').toUpperCase();
   let high = "0x" + ((val >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
   return `${low}, ${high}`;
 }
-// Tell Blockly how to traverse down a stack of connected blocks
-ev3Compiler.scrub_ = function(block, code, opt_thisOnly) {
-  const nextBlock = block.nextConnection && block.nextConnection.targetBlock();
-  const nextCode = opt_thisOnly ? '' : ev3Compiler.blockToCode(nextBlock);
-  
-  // Glue the current block's hex code to the next block's hex code
-  return code + nextCode; 
+
+// ==========================================
+// 3. BLOCK GENERATORS
+// ==========================================
+
+// Custom Motor Start
+ev3Compiler.forBlock['ev3_motor_custom'] = function(block) { 
+  const port = block.getFieldValue('PORT');
+  let speed = 50;
+  let target = block.getInputTargetBlock('SPEED');
+  if (target && target.type === 'math_number') { speed = parseInt(target.getFieldValue('NUM')); }
+  let speedByte = speed < 0 ? 256 + speed : speed;
+  let speedHex = "0x" + speedByte.toString(16).padStart(2, '0').toUpperCase();
+  // 0xA4 (Speed), 0xA6 (Start)
+  return `0xA4, 0x00, ${port}, 0x81, ${speedHex}, 0xA6, 0x00, ${port}, `;
 };
 
-// The Beep Fix (So it doesn't get cut off at the end of the file)
-ev3Compiler.forBlock['ev3_beep'] = function(block) { 
-  // Standard beep, but we add 0x96 (opSOUND_READY) at the end 
-  // This forces the program to stay alive and wait for the Beep to finish before exiting
-  return "0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, 0x96, "; 
+// Motor Stop
+ev3Compiler.forBlock['ev3_motor_stop'] = function(block) { 
+  const port = block.getFieldValue('PORT'); 
+  // 0xA3 (Stop), 0x01 (Brake)
+  return `0xA3, 0x00, ${port}, 0x01, `; 
 };
 
-ev3Compiler.forBlock['ev3_infinite_loop'] = function(block) {
-  // 1. Translate the blocks connected inside the "DO" area
-  let doCode = ev3Compiler.statementToCode(block, 'DO');
-  
-  // 2. Count the exact number of bytes
-  let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
-  
-  // 3. Jump backwards by the size of the inner code + the size of the jump command (4 bytes)
-  let offset = -(doBytes + 4); 
-  
-  // 0x27 (opJR Unconditional Jump), 0x82 (16-bit relative offset)
-  let jumpCode = `0x27, 0x82, ${getOffsetHex(offset)}, `;
-  
-  return doCode + jumpCode;
-};
-
-// The Canonical 32-Bit Memory Wait
+// Wait (Uses Protected Local Variable 8 to prevent sensor poisoning)
 ev3Compiler.forBlock['ev3_wait'] = function(block) { 
-  // 0x85 (Wait), 0x83 (32-bit Constant Flag)
-  // 0xE8, 0x03, 0x00, 0x00 (1000ms as a 32-bit Little-Endian integer)
-  // 0x40 (Save to protected Local Variable 0)
-  // 0x86 (Ready), 0x40 (Halt thread until Local Variable 0 is reached)
   return "0x85, 0x83, 0xE8, 0x03, 0x00, 0x00, 0x48, 0x86, 0x48, "; 
 };
 
+// Beep
+ev3Compiler.forBlock['ev3_beep'] = function(block) { 
+  return "0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, 0x96, "; 
+};
+
+// Infinite Loop
+ev3Compiler.forBlock['ev3_infinite_loop'] = function(block) {
+  let doCode = ev3Compiler.statementToCode(block, 'DO');
+  let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
+  let offset = -(doBytes + 4); 
+  let jumpCode = `0x27, 0x82, ${getOffsetHex(offset)}, `;
+  return doCode + jumpCode;
+};
+
+// Sensor Logic (Optimized AST branching)
 ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
   const port = block.getFieldValue('PORT');
   const operator = block.getFieldValue('OPERATOR');
@@ -234,179 +100,84 @@ ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
   let threshHex = "0x" + parseInt(threshold).toString(16).padStart(2, '0').toUpperCase();
   let opCode = operator === "LT" ? "0x6D" : "0x6E"; 
 
+  // Read Sensor to Local Var 0 (0x40), Compare Threshold to Local Var 4 (0x44)
   let readCode = `0x9A, 0x00, 0x0${port}, 0x00, 0x00, 0x40, `;
   let compareCode = `${opCode}, 0x40, 0x81, ${threshHex}, 0x44, `;
 
-  // OPTIMIZATION 1: If both are empty, just read the sensor and do nothing (No jumps!)
+  // OPTIMIZATION 1: No inner blocks
   if (doBytes === 0 && elseBytes === 0) {
     return readCode + compareCode;
   }
-
-  // OPTIMIZATION 2: If ELSE is empty, we only jump over DO if the condition is false
+  // OPTIMIZATION 2: Only DO block exists
   if (elseBytes === 0) {
     let jumpIfFalseCode = `0x29, 0x44, 0x82, ${getOffsetHex(doBytes)}, `;
     return readCode + compareCode + jumpIfFalseCode + doCode;
   }
-
-  // OPTIMIZATION 3: If DO is empty, we jump over ELSE if the condition is TRUE (0x28)
+  // OPTIMIZATION 3: Only ELSE block exists
   if (doBytes === 0) {
     let jumpIfTrueCode = `0x28, 0x44, 0x82, ${getOffsetHex(elseBytes)}, `;
     return readCode + compareCode + jumpIfTrueCode + elseCode;
   }
 
-  // If both have code, use the full branching sequence
+  // STANDARD: Both DO and ELSE exist
   let skipElseCode = `0x27, 0x82, ${getOffsetHex(elseBytes)}, `;
   let jumpIfFalseCode = `0x29, 0x44, 0x82, ${getOffsetHex(doBytes + 4)}, `;
 
   return readCode + compareCode + jumpIfFalseCode + doCode + skipElseCode + elseCode;
 };
 
-// The Explicit Motor Stop
-ev3Compiler.forBlock['ev3_motor_stop'] = function(block) { 
-  const port = block.getFieldValue('PORT'); 
-  // 0xA3 (Stop), 0x00 (Layer), port, 0x81, 0x01 (Explicit 1-byte Brake)
-  return `0xA3, 0x00, ${port}, 0x81, 0x01, `; 
-};
-
-ev3Compiler.forBlock['ev3_motor_custom'] = function(block) { 
-  const port = block.getFieldValue('PORT');
-  // For compiling, we grab the raw number from the attached shadow block
-  let speed = 50;
-  let target = block.getInputTargetBlock('SPEED');
-  if (target && target.type === 'math_number') { speed = parseInt(target.getFieldValue('NUM')); }
-  let speedByte = speed < 0 ? 256 + speed : speed;
-  let speedHex = "0x" + speedByte.toString(16).padStart(2, '0').toUpperCase();
-  return `0xA4, 0x00, ${port}, 0x81, ${speedHex}, 0xA6, 0x00, ${port}, `;
-};
-// We ignore sensors and logic blocks for the simple linear compiler
-ev3Compiler.forBlock['ev3_touch'] = function() { return ""; }; 
-
-// Helper Function: Wraps raw instructions in the strict EV3 .rbf 28-byte Blueprint
-function compileToRBF(instructions) {
+// ==========================================
+// 4. COMPILATION & UPLOAD LOGIC
+// ==========================================
+function compileAndUpload() {
+  // 1. Compile Workspace
+  let compiledString = ev3Compiler.workspaceToCode(workspace);
+  if (!compiledString || compiledString.trim() === "") { 
+    console.error("Workspace is empty!");
+    return;
+  }
+  
+  // 2. Append Graceful Shutdown BEFORE array conversion
+  // 0x02 (opPROGRAM_STOP), 0x0A (End of File)
+  compiledString += "0x02, 0x0A, ";
+  
+  const byteStringArray = compiledString.split(',').filter(s => s.trim().length > 0);
+  const instructions = new Uint8Array(byteStringArray.map(s => parseInt(s.trim(), 16)));
+  
+  // 3. Build 28-Byte LEGO Header
   const prefix = new Uint8Array([
-    0x4C, 0x45, 0x47, 0x4F, // "LEGO" (The Magic Signature!)
-    0x00, 0x00, 0x00, 0x00, // Total file size placeholder (index 4-7)
-    0x04, 0x01,             // Firmware Version 1.04 (index 8-9)
-    0x01, 0x00,             // Number of objects (1) (index 10-11)
-    0x20, 0x00, 0x00, 0x00, // Global memory allocated (32 bytes) (index 12-15)
-
-    // --- Start of Object 0 Header ---
-    0x1C, 0x00, 0x00, 0x00, // Offset to start of instructions (28 bytes) (index 16-19)
-    0x00, 0x00,             // Owner object (index 20-21)
-    0x00, 0x00,             // Trigger count (index 22-23)
-    0x20, 0x00, 0x00, 0x00  // Local memory allocated (32 bytes) (index 24-27)
+    0x4C, 0x45, 0x47, 0x4F, // 'LEGO'
+    0x00, 0x00, 0x00, 0x00, // Total file size (Calculated below)
+    0x04, 0x01,             // Bytecode Version 1.04
+    0x01, 0x00,             // 1 Object
+    0x40, 0x00, 0x00, 0x00, // Global Memory Size (64 bytes)
+    0x40, 0x00, 0x00, 0x00, // Local Memory Size (64 bytes)
+    0x00, 0x00, 0x00, 0x00  // IP Offset (0)
   ]);
   
-  // Calculate total size (Header + Code + 1 Exit Byte)
- const totalSize = prefix.length + instructions.length; 
-    
-    prefix[4] = totalSize & 0xFF; 
-    prefix[5] = (totalSize >> 8) & 0xFF;
-    prefix[6] = (totalSize >> 16) & 0xFF; 
-    prefix[7] = (totalSize >> 24) & 0xFF;
-    
-    const rbf = new Uint8Array(totalSize);
-    rbf.set(prefix, 0);
-    rbf.set(instructions, prefix.length);
-    
-    // Make sure you DELETE the manual rbf[totalSize - 1] = 0x0A lines from here!
-    return rbf;
+  // 4. Calculate final size and inject into header (Bytes 4-7)
+  const totalSize = prefix.length + instructions.length; 
+  prefix[4] = totalSize & 0xFF; 
+  prefix[5] = (totalSize >> 8) & 0xFF;
+  prefix[6] = (totalSize >> 16) & 0xFF; 
+  prefix[7] = (totalSize >> 24) & 0xFF;
+  
+  // 5. Combine into final .rbf buffer
+  const rbf = new Uint8Array(totalSize);
+  rbf.set(prefix, 0);
+  rbf.set(instructions, prefix.length);
+
+  // 6. Setup Path & Upload Using Dynamic Name
+  const filename = currentFileName + ".rbf";
+  const ev3Path = "../prjs/BrkProg_SAVE/" + filename + "\0";
+  const pathBytes = new TextEncoder().encode(ev3Path);
+
+  // -> Pass `rbf` and `pathBytes` to your Web Bluetooth / WebUSB write function here!
+  console.log(`Successfully compiled ${filename} (${totalSize} bytes)`);
 }
-// --- 5. INJECT BLOCKLY WORKSPACE ---
-const workspace = Blockly.inject('blocklyDiv', { toolbox: document.getElementById('toolbox'), scrollbars: true, trashcan: true });
 
-// --- 6. EXECUTE (TETHERED) ---
-runBtn.addEventListener('click', async () => {
-  if (!writer) return;
-  statusDiv.innerText = "Status: Running Tethered..."; statusDiv.style.color = "blue";
-  try {
-    const generatedCode = generator.workspaceToCode(workspace);
-    const executeBlocks = new Function('sendCommand', 'readSensor', `return (async () => { try { ${generatedCode} } catch (err) { throw err; } })();`);
-    await executeBlocks(sendEV3Command, readSensor);
-    statusDiv.innerText = "Status: Tethered Execution Complete!"; statusDiv.style.color = "green";
-  } catch (error) {
-    statusDiv.innerText = "Status: Runtime Error - " + error.message; statusDiv.style.color = "red";
-  }
-});
-
-// --- NEW 7. COMPILE & UPLOAD (UNTETHERED) ---
-uploadBtn.addEventListener('click', async () => {
-  try {
-    statusDiv.innerText = "Status: Compiling Code..."; statusDiv.style.color = "blue";
-    
-    // 1. Compile the blocks into a string of Hex values using our new generator
-    let compiledString = ev3Compiler.workspaceToCode(workspace);
-    if (!compiledString || compiledString.trim() === "") { throw new Error("Workspace is empty!"); }
-    // NEW FIX: Add the Graceful Shutdown directly to the string!
-    // This ensures all header size calculations count these bytes perfectly.
-    compiledString += "0x02, 0x0A, ";
-    
-    // 2. Convert string to a Javascript array, then to a Uint8Array
-    const byteStringArray = compiledString.split(',').filter(s => s.trim().length > 0);
-    const instructions = new Uint8Array(byteStringArray.map(s => parseInt(s.trim(), 16)));
-        
-    // 3. Wrap instructions in the RBF Blueprint
-    const dataBytes = compileToRBF(rawInstructions);
-    const fileSize = dataBytes.length;
-    
-  // Use the dynamic global variable instead of the hardcoded string
-    const filename = currentFileName + ".rbf"; 
-    
-    // The rest of your path generation stays exactly the same!
-    const ev3Path = "../prjs/BrkProg_SAVE/" + filename + "\0";
-    const pathBytes = new TextEncoder().encode(ev3Path);
-
-    // STEP 1: BEGIN_DOWNLOAD
-    statusDiv.innerText = "Status: Uploading (Allocating Space)...";
-    let msgId1 = msgIdCounter++;
-    let beginLen = 2 + 1 + 1 + 4 + pathBytes.length; 
-    let beginCmd = new Uint8Array(2 + beginLen);
-    beginCmd[0] = beginLen & 0xFF; beginCmd[1] = (beginLen >> 8) & 0xFF; beginCmd[2] = msgId1 & 0xFF; beginCmd[3] = (msgId1 >> 8) & 0xFF;
-    beginCmd[4] = 0x01; beginCmd[5] = 0x92; 
-    beginCmd[6] = fileSize & 0xFF; beginCmd[7] = (fileSize >> 8) & 0xFF; beginCmd[8] = (fileSize >> 16) & 0xFF; beginCmd[9] = (fileSize >> 24) & 0xFF;
-    beginCmd.set(pathBytes, 10);
-
-    let beginReplyPromise = new Promise(resolve => { pendingRequests.set(msgId1, resolve); setTimeout(() => resolve(null), 2000); });
-    await sendEV3Command(beginCmd);
-    let beginReply = await beginReplyPromise;
-
-    if (beginReply && beginReply[4] === 0x05) { throw new Error(`BEGIN rejected. EV3 Code: 0x${beginReply[6].toString(16).toUpperCase()}`); }
-    if (!beginReply || beginReply[4] !== 0x03 || beginReply[6] !== 0x00) { throw new Error("BEGIN_DOWNLOAD Failed."); }
-    let fileHandle = beginReply[7]; 
-    await new Promise(resolve => setTimeout(resolve, 150));
-
-    // STEP 2: CONTINUE_DOWNLOAD
-    statusDiv.innerText = "Status: Uploading (Writing Binary Data)...";
-    let msgId2 = msgIdCounter++;
-    let contLen = 2 + 1 + 1 + 1 + dataBytes.length; 
-    let contCmd = new Uint8Array(2 + contLen);
-    contCmd[0] = contLen & 0xFF; contCmd[1] = (contLen >> 8) & 0xFF; contCmd[2] = msgId2 & 0xFF; contCmd[3] = (msgId2 >> 8) & 0xFF;
-    contCmd[4] = 0x01; contCmd[5] = 0x93; contCmd[6] = fileHandle;
-    contCmd.set(dataBytes, 7);
-
-    let contReplyPromise = new Promise(resolve => { pendingRequests.set(msgId2, resolve); setTimeout(() => resolve(null), 2000); });
-    await sendEV3Command(contCmd);
-    let contReply = await contReplyPromise;
-
-    if (contReply && contReply[4] === 0x05) { throw new Error(`CONTINUE rejected. EV3 Code: 0x${contReply[6].toString(16).toUpperCase()}`); }
-    if (!contReply || contReply[4] !== 0x03 || (contReply[6] !== 0x00 && contReply[6] !== 0x08)) { throw new Error("CONTINUE_DOWNLOAD Failed."); }
-    await new Promise(resolve => setTimeout(resolve, 150));
-
-    // STEP 3: CLOSE_FILEHANDLE
-    statusDiv.innerText = "Status: Finalizing Executable...";
-    let msgId3 = msgIdCounter++;
-    let closeLen = 5; 
-    let closeCmd = new Uint8Array(2 + closeLen);
-    closeCmd[0] = closeLen & 0xFF; closeCmd[1] = (closeLen >> 8) & 0xFF; closeCmd[2] = msgId3 & 0xFF; closeCmd[3] = (msgId3 >> 8) & 0xFF;
-    closeCmd[4] = 0x01; closeCmd[5] = 0x98; closeCmd[6] = fileHandle;
-
-    await sendEV3Command(closeCmd); 
-    statusDiv.innerText = "Status: Executable Uploaded! Run it on the EV3.";
-    statusDiv.style.color = "green";
-  } catch (err) {
-    statusDiv.innerText = "Status: " + err.message;
-    statusDiv.style.color = "red";
-    console.error(err);
-  }
-});
-
+// Hook up your specific Upload Button
+const uploadBtn = document.getElementById('uploadBtn'); // Update ID if necessary
+if (uploadBtn) {
+  uploadBtn.addEventListener('click', compileAndUpload);
+}
