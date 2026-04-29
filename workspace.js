@@ -168,18 +168,23 @@ ev3Compiler.forBlock['ev3_beep'] = function(block) {
   return "0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, 0x96, "; 
 };
 
+// 1. The Infinite Loop Generator
 ev3Compiler.forBlock['ev3_infinite_loop'] = function(block) {
   let doCode = ev3Compiler.statementToCode(block, 'DO');
   let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
   let offset = -(doBytes + 4); 
-  let jumpCode = `0x27, 0x82, ${getOffsetHex(offset)}, `;
+  
+  // 0x40 is the TRUE EV3 opcode for opJR (Jump Unconditional)
+  let jumpCode = `0x40, 0x82, ${getOffsetHex(offset)}, `;
+  
   return doCode + jumpCode;
-};
+}
 
 ev3Compiler.forBlock['ev3_wait'] = function(block) { 
   return "0x85, 0x83, 0xE8, 0x03, 0x00, 0x00, 0x48, 0x86, 0x48, "; 
 };
 
+// 2. The Sensor Logic Generator
 ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
   const port = block.getFieldValue('PORT');
   const operator = block.getFieldValue('OPERATOR');
@@ -192,25 +197,28 @@ ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
   let elseBytes = elseCode.split(',').filter(s => s.trim().length > 0).length;
 
   let threshHex = "0x" + parseInt(threshold).toString(16).padStart(2, '0').toUpperCase();
-  let opCode = operator === "LT" ? "0x7C" : "0x74"; 
+  
+  // The TRUE EV3 8-bit opcodes: 0x44 (LT8), 0x48 (GT8)
+  let opCode = operator === "LT" ? "0x44" : "0x48"; 
 
   let readCode = `0x9A, 0x00, 0x0${port}, 0x1D, 0x00, 0x40, `;
   let compareCode = `${opCode}, 0x40, 0x81, ${threshHex}, 0x44, `;
 
+  // 0x40 (Jump), 0x41 (Jump if False), 0x42 (Jump if True)
   if (doBytes === 0 && elseBytes === 0) {
     return readCode + compareCode;
   }
   if (elseBytes === 0) {
-    let jumpIfFalseCode = `0x29, 0x44, 0x82, ${getOffsetHex(doBytes)}, `;
+    let jumpIfFalseCode = `0x41, 0x44, 0x82, ${getOffsetHex(doBytes)}, `;
     return readCode + compareCode + jumpIfFalseCode + doCode;
   }
   if (doBytes === 0) {
-    let jumpIfTrueCode = `0x28, 0x44, 0x82, ${getOffsetHex(elseBytes)}, `;
+    let jumpIfTrueCode = `0x42, 0x44, 0x82, ${getOffsetHex(elseBytes)}, `;
     return readCode + compareCode + jumpIfTrueCode + elseCode;
   }
 
-  let skipElseCode = `0x27, 0x82, ${getOffsetHex(elseBytes)}, `;
-  let jumpIfFalseCode = `0x29, 0x44, 0x82, ${getOffsetHex(doBytes + 4)}, `;
+  let skipElseCode = `0x40, 0x82, ${getOffsetHex(elseBytes)}, `;
+  let jumpIfFalseCode = `0x41, 0x44, 0x82, ${getOffsetHex(doBytes + 4)}, `;
 
   return readCode + compareCode + jumpIfFalseCode + doCode + skipElseCode + elseCode;
 };
