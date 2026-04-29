@@ -171,6 +171,14 @@ generator.forBlock['ev3_touch'] = function(block) { const port = block.getFieldV
 // This generator strictly outputs EV3 machine instructions separated by commas.
 const ev3Compiler = new Blockly.Generator('EV3Compiler');
 
+// Calculates 16-bit jump offsets for branching logic
+function getOffsetHex(offset) {
+  // If the jump is backwards, use Two's Complement math
+  let val = offset < 0 ? 65536 + offset : offset;
+  let low = "0x" + (val & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  let high = "0x" + ((val >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  return `${low}, ${high}`;
+}
 // Tell Blockly how to traverse down a stack of connected blocks
 ev3Compiler.scrub_ = function(block, code, opt_thisOnly) {
   const nextBlock = block.nextConnection && block.nextConnection.targetBlock();
@@ -187,6 +195,22 @@ ev3Compiler.forBlock['ev3_beep'] = function(block) {
   return "0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, 0x96, "; 
 };
 
+ev3Compiler.forBlock['ev3_infinite_loop'] = function(block) {
+  // 1. Translate the blocks connected inside the "DO" area
+  let doCode = ev3Compiler.statementToCode(block, 'DO');
+  
+  // 2. Count the exact number of bytes
+  let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
+  
+  // 3. Jump backwards by the size of the inner code + the size of the jump command (4 bytes)
+  let offset = -(doBytes + 4); 
+  
+  // 0x27 (opJR Unconditional Jump), 0x82 (16-bit relative offset)
+  let jumpCode = `0x27, 0x82, ${getOffsetHex(offset)}, `;
+  
+  return doCode + jumpCode;
+};
+
 // The Canonical 32-Bit Memory Wait
 ev3Compiler.forBlock['ev3_wait'] = function(block) { 
   // 0x85 (Wait), 0x83 (32-bit Constant Flag)
@@ -194,6 +218,38 @@ ev3Compiler.forBlock['ev3_wait'] = function(block) {
   // 0x40 (Save to protected Local Variable 0)
   // 0x86 (Ready), 0x40 (Halt thread until Local Variable 0 is reached)
   return "0x85, 0x83, 0xE8, 0x03, 0x00, 0x00, 0x40, 0x86, 0x40, "; 
+};
+
+ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
+  const port = block.getFieldValue('PORT');
+  const operator = block.getFieldValue('OPERATOR');
+  const threshold = block.getFieldValue('THRESHOLD');
+  
+  // Translate the inner blocks and count their sizes
+  let doCode = ev3Compiler.statementToCode(block, 'DO');
+  let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
+  
+  let elseCode = ev3Compiler.statementToCode(block, 'ELSE');
+  let elseBytes = elseCode.split(',').filter(s => s.trim().length > 0).length;
+
+  // Format Threshold Number and Operator Code
+  let threshHex = "0x" + parseInt(threshold).toString(16).padStart(2, '0').toUpperCase();
+  let opCode = operator === "LT" ? "0x6D" : "0x6E"; // 0x6D = Less Than, 0x6E = Greater Than
+
+  // 1. Read Sensor: 0x9A (opINPUT_READ), Layer 0, Port, Type 0, Mode 0 (Reflected Light), Save to Local Var 0
+  let readCode = `0x9A, 0x00, 0x0${port}, 0x00, 0x00, 0x40, `;
+
+  // 2. Compare: Operator, Local Var 0, 8-bit Threshold, Save boolean result to Local Var 4
+  let compareCode = `${opCode}, 0x40, 0x81, ${threshHex}, 0x44, `;
+
+  // 3. Jump if False (Skips the DO block and lands on the ELSE block)
+  // Offset = size of DO block + size of the absolute jump instruction (4 bytes)
+  let jumpIfFalseCode = `0x29, 0x44, 0x82, ${getOffsetHex(doBytes + 4)}, `;
+
+  // 4. Absolute Jump (Sits at the end of the DO block to skip over the ELSE block)
+  let skipElseCode = `0x27, 0x82, ${getOffsetHex(elseBytes)}, `;
+
+  return readCode + compareCode + jumpIfFalseCode + doCode + skipElseCode + elseCode;
 };
 
 // The Explicit Motor Stop
