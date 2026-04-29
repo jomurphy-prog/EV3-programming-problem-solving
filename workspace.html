@@ -2,65 +2,65 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>EV3 Blockly Workspace</title>
-  <script src="https://unpkg.com/blockly/blockly.min.js"></script>
-  <script src="https://unpkg.com/blockly/javascript_compressed.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EV3 JavaScript Compiler</title>
+  
+  <script src="https://unpkg.com/blockly/blockly_compressed.js"></script>
+  <script src="https://unpkg.com/blockly/blocks_compressed.js"></script>
+  <script src="https://unpkg.com/blockly/msg/en.js"></script>
+
   <style>
-    body { font-family: system-ui, sans-serif; padding: 20px; background: #f4f4f9; margin: 0; }
-    .header { max-width: 800px; margin: 0 auto 20px auto; display: flex; justify-content: space-between; align-items: center; }
-    button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #0055A5; color: white; border: none; border-radius: 4px; }
-    button:disabled { background: #ccc; cursor: not-allowed; }
-    #runBtn { background: #28a745; }
-    #runBtn:disabled { background: #ccc; }
-    #status { font-weight: bold; color: #333; margin-left: 15px; }
-    /* This height is critical. If missing, Blockly will disappear! */
-    #blocklyDiv { height: 500px; max-width: 800px; margin: 0 auto; border: 1px solid #ccc; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f4f4f9;
+    }
+    .toolbar {
+      margin-bottom: 15px;
+      padding: 10px;
+      background-color: #ffffff;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    button {
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    #renameBtn {
+      background-color: #008CBA;
+    }
+    #renameBtn:hover {
+      background-color: #007BB5;
+    }
+    #blocklyDiv {
+      height: 70vh;
+      width: 100%;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <button id="connectBtn">Connect to EV3</button>
-      <span id="status">Status: Disconnected</span>
-      <button id="uploadBtn" disabled style="background: #e67e22; margin-right: 10px;">Test File Upload</button>
-      <button id="runBtn" disabled>Run Blocks ▶</button>
-      <button id="renameBtn">Rename Project</button>
-      <span id="fileNameDisplay" style="margin-left: 10px; font-weight: bold;">MyProgram.rbf</span>
-    </div>
+
+  <div class="toolbar">
+    <button id="uploadBtn">Compile & Upload to EV3</button>
+    
+    <div style="border-left: 2px solid #eee; height: 30px;"></div>
+    
+    <button id="renameBtn">Rename Project</button>
+    <span id="fileNameDisplay" style="font-family: monospace; font-size: 16px; color: #333;">MyProgram.rbf</span>
   </div>
+
   <div id="blocklyDiv"></div>
-
-  <xml id="toolbox" style="display: none">
- <category name="EV3 Robot" colour="230">
-      <block type="ev3_beep"></block>
-      <block type="ev3_wait"></block>
-      <block type="ev3_motor_stop"></block>
-      <block type="ev3_touch"></block>
-      <block type="ev3_motor_custom">
-        <value name="SPEED">
-          <shadow type="math_number">
-            <field name="NUM">50</field>
-          </shadow>
-        </value>
-      </block>
-    </category>
-    <category name="Logic" colour="210">
-      <block type="controls_if"></block>
-      <block type="ev3_sensor_logic"></block>
-      <block type="logic_compare"></block>
-      <block type="logic_operation"></block>
-    </category>
-    <category name="Loops" colour="120">
-      <block type="ev3_infinite_loop"></block>
-      <block type="controls_repeat_ext"></block>
-      <block type="controls_whileUntil"></block>
-    </category>
-    <category name="Math" colour="230">
-      <block type="math_number"></block>
-      <block type="math_arithmetic"></block>
-    </category>
-  </xml>
-
-  <script src="workspace.js"></script>
-</body>
-</html>
