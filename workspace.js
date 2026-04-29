@@ -27,7 +27,7 @@ connectBtn.addEventListener('click', async () => {
   } catch (error) {
     statusDiv.innerText = "Status: Connection Failed";
     statusDiv.style.color = "red";
-    console.error(error);
+    console.error(error); 
   }
 });
 
@@ -192,9 +192,9 @@ ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
   let elseBytes = elseCode.split(',').filter(s => s.trim().length > 0).length;
 
   let threshHex = "0x" + parseInt(threshold).toString(16).padStart(2, '0').toUpperCase();
-  let opCode = operator === "LT" ? "0x6D" : "0x6E"; 
+  let opCode = operator === "LT" ? "0x72" : "0x6E"; 
 
-  let readCode = `0x9A, 0x00, 0x0${port}, 0x00, 0x00, 0x40, `;
+  let readCode = `0x9A, 0x00, 0x0${port}, 0x1D, 0x00, 0x40, `;
   let compareCode = `${opCode}, 0x40, 0x81, ${threshHex}, 0x44, `;
 
   if (doBytes === 0 && elseBytes === 0) {
@@ -284,8 +284,8 @@ uploadBtn.addEventListener('click', async () => {
     let compiledString = ev3Compiler.workspaceToCode(workspace);
     if (!compiledString || compiledString.trim() === "") { throw new Error("Workspace is empty!"); }
     
-    // Add graceful shutdown right before compiling to binary
-    compiledString += "0x02, 0x00, 0x0A, ";
+    // Add graceful shutdown right before compiling to binary, we safely tell all motors (Port 0x0F) to Brake (0x01), then cleanly end the file (0x0A).
+    compiledString += "0xA3, 0x00, 0x0F, 0x01, 0x0A, ";
     
     const byteStringArray = compiledString.split(',').filter(s => s.trim().length > 0);
     const rawInstructions = new Uint8Array(byteStringArray.map(s => parseInt(s.trim(), 16)));
