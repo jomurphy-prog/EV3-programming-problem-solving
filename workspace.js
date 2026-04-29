@@ -225,29 +225,38 @@ ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
   const operator = block.getFieldValue('OPERATOR');
   const threshold = block.getFieldValue('THRESHOLD');
   
-  // Translate the inner blocks and count their sizes
   let doCode = ev3Compiler.statementToCode(block, 'DO');
-  let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
-  
   let elseCode = ev3Compiler.statementToCode(block, 'ELSE');
+
+  let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
   let elseBytes = elseCode.split(',').filter(s => s.trim().length > 0).length;
 
-  // Format Threshold Number and Operator Code
   let threshHex = "0x" + parseInt(threshold).toString(16).padStart(2, '0').toUpperCase();
-  let opCode = operator === "LT" ? "0x6D" : "0x6E"; // 0x6D = Less Than, 0x6E = Greater Than
+  let opCode = operator === "LT" ? "0x6D" : "0x6E"; 
 
-  // 1. Read Sensor: 0x9A (opINPUT_READ), Layer 0, Port, Type 0, Mode 0 (Reflected Light), Save to Local Var 0
   let readCode = `0x9A, 0x00, 0x0${port}, 0x00, 0x00, 0x40, `;
-
-  // 2. Compare: Operator, Local Var 0, 8-bit Threshold, Save boolean result to Local Var 4
   let compareCode = `${opCode}, 0x40, 0x81, ${threshHex}, 0x44, `;
 
-  // 3. Jump if False (Skips the DO block and lands on the ELSE block)
-  // Offset = size of DO block + size of the absolute jump instruction (4 bytes)
-  let jumpIfFalseCode = `0x29, 0x44, 0x82, ${getOffsetHex(doBytes + 4)}, `;
+  // OPTIMIZATION 1: If both are empty, just read the sensor and do nothing (No jumps!)
+  if (doBytes === 0 && elseBytes === 0) {
+    return readCode + compareCode;
+  }
 
-  // 4. Absolute Jump (Sits at the end of the DO block to skip over the ELSE block)
+  // OPTIMIZATION 2: If ELSE is empty, we only jump over DO if the condition is false
+  if (elseBytes === 0) {
+    let jumpIfFalseCode = `0x29, 0x44, 0x82, ${getOffsetHex(doBytes)}, `;
+    return readCode + compareCode + jumpIfFalseCode + doCode;
+  }
+
+  // OPTIMIZATION 3: If DO is empty, we jump over ELSE if the condition is TRUE (0x28)
+  if (doBytes === 0) {
+    let jumpIfTrueCode = `0x28, 0x44, 0x82, ${getOffsetHex(elseBytes)}, `;
+    return readCode + compareCode + jumpIfTrueCode + elseCode;
+  }
+
+  // If both have code, use the full branching sequence
   let skipElseCode = `0x27, 0x82, ${getOffsetHex(elseBytes)}, `;
+  let jumpIfFalseCode = `0x29, 0x44, 0x82, ${getOffsetHex(doBytes + 4)}, `;
 
   return readCode + compareCode + jumpIfFalseCode + doCode + skipElseCode + elseCode;
 };
@@ -289,20 +298,19 @@ function compileToRBF(instructions) {
   ]);
   
   // Calculate total size (Header + Code + 1 Exit Byte)
-  const totalSize = prefix.length + instructions.length + 1; 
-  
-  // Inject the 32-bit total file size into bytes 4-7
-  prefix[4] = totalSize & 0xFF; 
-  prefix[5] = (totalSize >> 8) & 0xFF;
-  prefix[6] = (totalSize >> 16) & 0xFF; 
-  prefix[7] = (totalSize >> 24) & 0xFF;
-  
-  const rbf = new Uint8Array(totalSize);
-  rbf.set(prefix, 0);
-  rbf.set(instructions, prefix.length);
-  rbf[totalSize - 1] = 0x0A; // opOBJECT_END (Tells EV3 the program is finished)
-  
-  return rbf;
+ const totalSize = prefix.length + instructions.length; 
+    
+    prefix[4] = totalSize & 0xFF; 
+    prefix[5] = (totalSize >> 8) & 0xFF;
+    prefix[6] = (totalSize >> 16) & 0xFF; 
+    prefix[7] = (totalSize >> 24) & 0xFF;
+    
+    const rbf = new Uint8Array(totalSize);
+    rbf.set(prefix, 0);
+    rbf.set(instructions, prefix.length);
+    
+    // Make sure you DELETE the manual rbf[totalSize - 1] = 0x0A lines from here!
+    return rbf;
 }
 // --- 5. INJECT BLOCKLY WORKSPACE ---
 const workspace = Blockly.inject('blocklyDiv', { toolbox: document.getElementById('toolbox'), scrollbars: true, trashcan: true });
@@ -327,12 +335,15 @@ uploadBtn.addEventListener('click', async () => {
     statusDiv.innerText = "Status: Compiling Code..."; statusDiv.style.color = "blue";
     
     // 1. Compile the blocks into a string of Hex values using our new generator
-    const compiledString = ev3Compiler.workspaceToCode(workspace);
+    let compiledString = ev3Compiler.workspaceToCode(workspace);
     if (!compiledString || compiledString.trim() === "") { throw new Error("Workspace is empty!"); }
+    // NEW FIX: Add the Graceful Shutdown directly to the string!
+    // This ensures all header size calculations count these bytes perfectly.
+    compiledString += "0x02, 0x0A, ";
     
     // 2. Convert string to a Javascript array, then to a Uint8Array
     const byteStringArray = compiledString.split(',').filter(s => s.trim().length > 0);
-    const rawInstructions = new Uint8Array(byteStringArray.map(s => parseInt(s.trim(), 16)));
+    const instructions = new Uint8Array(byteStringArray.map(s => parseInt(s.trim(), 16)));
         
     // 3. Wrap instructions in the RBF Blueprint
     const dataBytes = compileToRBF(rawInstructions);
