@@ -31,6 +31,34 @@ connectBtn.addEventListener('click', async () => {
   }
 });
 
+// Global variable to store the clean file name
+let currentFileName = "MyProgram";
+
+const renameBtn = document.getElementById('renameBtn');
+const fileNameDisplay = document.getElementById('fileNameDisplay');
+
+renameBtn.addEventListener('click', () => {
+  // 1. Ask the user for a name
+  let userInput = prompt("Enter a name for your EV3 program (no spaces):", currentFileName);
+  
+  // 2. If they clicked 'Cancel' or left it blank, do nothing
+  if (userInput !== null && userInput.trim() !== "") {
+    
+    // 3. Sanitize the input! 
+    // This regex removes spaces and special characters so the EV3 OS doesn't crash
+    let safeName = userInput.replace(/[^a-zA-Z0-9_-]/g, '');
+    
+    // 4. Fallback in case they typed ONLY special characters
+    if (safeName === "") {
+      safeName = "MyProgram";
+    }
+    
+    // 5. Update our variable and the UI display
+    currentFileName = safeName;
+    fileNameDisplay.innerText = currentFileName + ".rbf";
+  }
+});
+
 async function listenToPort() {
   reader = port.readable.getReader();
   try {
@@ -218,7 +246,10 @@ uploadBtn.addEventListener('click', async () => {
     const dataBytes = compileToRBF(rawInstructions);
     const fileSize = dataBytes.length;
     
-    const filename = "TestProg2.rbf";
+  // Use the dynamic global variable instead of the hardcoded string
+    const filename = currentFileName + ".rbf"; 
+    
+    // The rest of your path generation stays exactly the same!
     const ev3Path = "../prjs/BrkProg_SAVE/" + filename + "\0";
     const pathBytes = new TextEncoder().encode(ev3Path);
 
