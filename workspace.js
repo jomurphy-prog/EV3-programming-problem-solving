@@ -285,7 +285,7 @@ uploadBtn.addEventListener('click', async () => {
     if (!compiledString || compiledString.trim() === "") { throw new Error("Workspace is empty!"); }
     
     // Add graceful shutdown right before compiling to binary
-    compiledString += "0x02, 0x0A, ";
+    compiledString += "0x02, 0x00, 0x0A, ";
     
     const byteStringArray = compiledString.split(',').filter(s => s.trim().length > 0);
     const rawInstructions = new Uint8Array(byteStringArray.map(s => parseInt(s.trim(), 16)));
