@@ -146,6 +146,28 @@ Blockly.Blocks['ev3_touch_logic'] = {
   }
 };
 
+Blockly.Blocks['ev3_ultrasonic_logic'] = {
+  init: function() {
+    this.appendDummyInput()
+        .appendField("If Ultrasonic Port")
+        .appendField(new Blockly.FieldDropdown([["1","0"], ["2","1"], ["3","2"], ["4","3"]]), "PORT")
+        .appendField("Distance")
+        .appendField(new Blockly.FieldDropdown([["<","LT"], [">","GT"]]), "OPERATOR")
+        .appendField(new Blockly.FieldNumber(15, 0, 100), "THRESHOLD")
+        .appendField("cm");
+    this.appendStatementInput("DO")
+        .setCheck(null)
+        .appendField("Do");
+    this.appendStatementInput("ELSE")
+        .setCheck(null)
+        .appendField("Else");
+    this.setPreviousStatement(true, null);
+    this.setNextStatement(true, null);
+    this.setColour(210);
+    this.setTooltip("Reads the ultrasonic sensor in centimeters and executes logic.");
+  }
+};
+
 Blockly.Blocks['ev3_sensor_logic'] = {
   init: function() {
     this.appendDummyInput()
@@ -200,6 +222,45 @@ ev3Compiler.scrub_ = function(block, code, opt_thisOnly) {
 
 ev3Compiler.forBlock['ev3_beep'] = function(block) { 
   return "0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, 0x96, "; 
+};
+
+ev3Compiler.forBlock['ev3_ultrasonic_logic'] = function(block) {
+  const port = block.getFieldValue('PORT');
+  const operator = block.getFieldValue('OPERATOR');
+  const threshold = block.getFieldValue('THRESHOLD');
+  
+  let doCode = ev3Compiler.statementToCode(block, 'DO');
+  let elseCode = ev3Compiler.statementToCode(block, 'ELSE');
+
+  let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
+  let elseBytes = elseCode.split(',').filter(s => s.trim().length > 0).length;
+
+  let threshHex = "0x" + parseInt(threshold).toString(16).padStart(2, '0').toUpperCase();
+  
+  // The TRUE EV3 8-bit math opcodes: 0x44 (LT8), 0x48 (GT8)
+  let opCode = operator === "LT" ? "0x44" : "0x48"; 
+
+  // Read Sensor: Hardware Type 0x1E (Ultrasonic), Mode 0 (Centimeters)
+  let readCode = `0x9A, 0x00, 0x0${port}, 0x1E, 0x00, 0x40, `;
+  let compareCode = `${opCode}, 0x40, 0x81, ${threshHex}, 0x44, `;
+
+  // Smart AST Jumps
+  if (doBytes === 0 && elseBytes === 0) {
+    return readCode + compareCode;
+  }
+  if (elseBytes === 0) {
+    let jumpIfFalseCode = `0x41, 0x44, 0x82, ${getOffsetHex(doBytes)}, `;
+    return readCode + compareCode + jumpIfFalseCode + doCode;
+  }
+  if (doBytes === 0) {
+    let jumpIfTrueCode = `0x42, 0x44, 0x82, ${getOffsetHex(elseBytes)}, `;
+    return readCode + compareCode + jumpIfTrueCode + elseCode;
+  }
+
+  let skipElseCode = `0x40, 0x82, ${getOffsetHex(elseBytes)}, `;
+  let jumpIfFalseCode = `0x41, 0x44, 0x82, ${getOffsetHex(doBytes + 4)}, `;
+
+  return readCode + compareCode + jumpIfFalseCode + doCode + skipElseCode + elseCode;
 };
 
 // Loop "unroller" generator
