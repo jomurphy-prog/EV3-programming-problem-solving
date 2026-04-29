@@ -110,7 +110,26 @@ Blockly.Blocks['ev3_beep'] = { init: function() { this.appendDummyInput().append
 Blockly.Blocks['ev3_wait'] = { init: function() { this.appendDummyInput().appendField("Wait 1 Second"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(120); } };
 Blockly.Blocks['ev3_motor_custom'] = { init: function() { this.appendDummyInput().appendField("Start Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["A+B", "0x03"] ]), "PORT"); this.appendValueInput("SPEED").setCheck("Number").appendField("at speed"); this.setInputsInline(true); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
 Blockly.Blocks['ev3_motor_stop'] = { init: function() { this.appendDummyInput().appendField("Stop Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["All", "0x0F"] ]), "PORT"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
-Blockly.Blocks['ev3_touch'] = { init: function() { this.appendDummyInput().appendField("Touch Sensor on Port").appendField(new Blockly.FieldDropdown([ ["1", "0"], ["2", "1"], ["3", "2"], ["4", "3"] ]), "PORT"); this.setOutput(true, "Boolean"); this.setColour(210); } };
+
+Blockly.Blocks['ev3_touch_logic'] = {
+  init: function() {
+    this.appendDummyInput()
+        .appendField("If Touch Sensor Port")
+        .appendField(new Blockly.FieldDropdown([["1","0"], ["2","1"], ["3","2"], ["4","3"]]), "PORT")
+        .appendField("is")
+        .appendField(new Blockly.FieldDropdown([["Pressed","PRESSED"], ["Released","RELEASED"]]), "STATE");
+    this.appendStatementInput("DO")
+        .setCheck(null)
+        .appendField("Do");
+    this.appendStatementInput("ELSE")
+        .setCheck(null)
+        .appendField("Else");
+    this.setPreviousStatement(true, null);
+    this.setNextStatement(true, null);
+    this.setColour(210);
+    this.setTooltip("Executes blocks based on whether the touch sensor is pressed or released.");
+  }
+};
 
 Blockly.Blocks['ev3_sensor_logic'] = {
   init: function() {
@@ -184,7 +203,50 @@ ev3Compiler.forBlock['ev3_wait'] = function(block) {
   return "0x85, 0x83, 0xE8, 0x03, 0x00, 0x00, 0x48, 0x86, 0x48, "; 
 };
 
-// 2. The Sensor Logic Generator
+// Touch sensor block generator
+ev3Compiler.forBlock['ev3_touch_logic'] = function(block) {
+  const port = block.getFieldValue('PORT');
+  const state = block.getFieldValue('STATE');
+  
+  let doCode = ev3Compiler.statementToCode(block, 'DO');
+  let elseCode = ev3Compiler.statementToCode(block, 'ELSE');
+
+  let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
+  let elseBytes = elseCode.split(',').filter(s => s.trim().length > 0).length;
+
+  // 1. Read Sensor: Hardware Type 0x10 (Touch Sensor)
+  let readCode = `0x9A, 0x00, 0x0${port}, 0x10, 0x00, 0x40, `;
+  
+  // 2. Evaluate State
+  let compareCode = "";
+  if (state === "PRESSED") {
+    // 0x48 (opCP_GT8): Is Memory 0x40 > 0? Save boolean to 0x44
+    compareCode = `0x48, 0x40, 0x81, 0x00, 0x44, `; 
+  } else {
+    // 0x44 (opCP_LT8): Is Memory 0x40 < 1? Save boolean to 0x44
+    compareCode = `0x44, 0x40, 0x81, 0x01, 0x44, `; 
+  }
+
+  // 3. Smart AST Jumps (Identical to the Color Sensor!)
+  if (doBytes === 0 && elseBytes === 0) {
+    return readCode + compareCode;
+  }
+  if (elseBytes === 0) {
+    let jumpIfFalseCode = `0x41, 0x44, 0x82, ${getOffsetHex(doBytes)}, `;
+    return readCode + compareCode + jumpIfFalseCode + doCode;
+  }
+  if (doBytes === 0) {
+    let jumpIfTrueCode = `0x42, 0x44, 0x82, ${getOffsetHex(elseBytes)}, `;
+    return readCode + compareCode + jumpIfTrueCode + elseCode;
+  }
+
+  let skipElseCode = `0x40, 0x82, ${getOffsetHex(elseBytes)}, `;
+  let jumpIfFalseCode = `0x41, 0x44, 0x82, ${getOffsetHex(doBytes + 4)}, `;
+
+  return readCode + compareCode + jumpIfFalseCode + doCode + skipElseCode + elseCode;
+};
+
+// The Sensor Logic Generator
 ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
   const port = block.getFieldValue('PORT');
   const operator = block.getFieldValue('OPERATOR');
