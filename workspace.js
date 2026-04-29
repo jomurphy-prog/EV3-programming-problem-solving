@@ -111,6 +111,21 @@ Blockly.Blocks['ev3_wait'] = { init: function() { this.appendDummyInput().append
 Blockly.Blocks['ev3_motor_custom'] = { init: function() { this.appendDummyInput().appendField("Start Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["A+B", "0x03"] ]), "PORT"); this.appendValueInput("SPEED").setCheck("Number").appendField("at speed"); this.setInputsInline(true); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
 Blockly.Blocks['ev3_motor_stop'] = { init: function() { this.appendDummyInput().appendField("Stop Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["All", "0x0F"] ]), "PORT"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
 
+Blockly.Blocks['ev3_repeat_times'] = {
+  init: function() {
+    this.appendDummyInput()
+        .appendField("Repeat")
+        .appendField(new Blockly.FieldNumber(5, 1, 100), "TIMES")
+        .appendField("Times");
+    this.appendStatementInput("DO")
+        .setCheck(null);
+    this.setPreviousStatement(true, null);
+    this.setNextStatement(true, null);
+    this.setColour(120);
+    this.setTooltip("Repeats the enclosed blocks a specific number of times.");
+  }
+};
+
 Blockly.Blocks['ev3_touch_logic'] = {
   init: function() {
     this.appendDummyInput()
@@ -187,7 +202,24 @@ ev3Compiler.forBlock['ev3_beep'] = function(block) {
   return "0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03, 0x96, "; 
 };
 
-// 1. The Infinite Loop Generator
+// Loop "unroller" generator
+ev3Compiler.forBlock['ev3_repeat_times'] = function(block) {
+  // Grab the number of times to repeat
+  const times = parseInt(block.getFieldValue('TIMES'));
+  
+  // Translate whatever blocks are inside the loop
+  let doCode = ev3Compiler.statementToCode(block, 'DO');
+  
+  // Compiler Optimization: Loop Unrolling
+  let unrolledCode = "";
+  for (let i = 0; i < times; i++) {
+    unrolledCode += doCode;
+  }
+
+  return unrolledCode;
+};
+
+// The Infinite Loop Generator
 ev3Compiler.forBlock['ev3_infinite_loop'] = function(block) {
   let doCode = ev3Compiler.statementToCode(block, 'DO');
   let doBytes = doCode.split(',').filter(s => s.trim().length > 0).length;
