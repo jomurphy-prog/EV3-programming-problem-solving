@@ -122,6 +122,42 @@ Blockly.Blocks['ev3_wait'] = { init: function() { this.appendDummyInput().append
 Blockly.Blocks['ev3_motor_custom'] = { init: function() { this.appendDummyInput().appendField("Start Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["A+B", "0x03"] ]), "PORT"); this.appendValueInput("SPEED").setCheck("Number").appendField("at speed"); this.setInputsInline(true); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
 Blockly.Blocks['ev3_motor_stop'] = { init: function() { this.appendDummyInput().appendField("Stop Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["All", "0x0F"] ]), "PORT"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
 Blockly.Blocks['ev3_touch'] = { init: function() { this.appendDummyInput().appendField("Touch Sensor on Port").appendField(new Blockly.FieldDropdown([ ["1", "0"], ["2", "1"], ["3", "2"], ["4", "3"] ]), "PORT"); this.setOutput(true, "Boolean"); this.setColour(210); } };
+// 1. The Sensor Logic Block
+Blockly.Blocks['ev3_sensor_logic'] = {
+  init: function() {
+    this.appendDummyInput()
+        .appendField("If Color Sensor Port")
+        .appendField(new Blockly.FieldDropdown([["1","0"], ["2","1"], ["3","2"], ["4","3"]]), "PORT")
+        .appendField("Reflected Light")
+        .appendField(new Blockly.FieldDropdown([["<","LT"], [">","GT"]]), "OPERATOR")
+        .appendField(new Blockly.FieldNumber(45, 0, 100), "THRESHOLD")
+        .appendField("%");
+    this.appendStatementInput("DO")
+        .setCheck(null)
+        .appendField("Do");
+    this.appendStatementInput("ELSE")
+        .setCheck(null)
+        .appendField("Else");
+    this.setPreviousStatement(true, null);
+    this.setNextStatement(true, null);
+    this.setColour(210);
+    this.setTooltip("Reads the color sensor and executes blocks based on the light percentage.");
+  }
+};
+
+// 2. The Infinite Loop Block
+Blockly.Blocks['ev3_infinite_loop'] = {
+  init: function() {
+    this.appendDummyInput()
+        .appendField("Repeat Forever");
+    this.appendStatementInput("DO")
+        .setCheck(null);
+    this.setPreviousStatement(true, null);
+    // Notice: No Next Statement! A forever loop never moves to the next block.
+    this.setColour(120);
+    this.setTooltip("Repeats the blocks inside forever.");
+  }
+};
 
 // --- 3. GENERATORS (TETHERED JS) ---
 const generator = javascript.javascriptGenerator;
