@@ -107,6 +107,15 @@ generator.forBlock['ev3_touch'] = function(block) { const port = block.getFieldV
 // This generator strictly outputs EV3 machine instructions separated by commas.
 const ev3Compiler = new Blockly.Generator('EV3Compiler');
 
+// Tell Blockly how to traverse down a stack of connected blocks
+ev3Compiler.scrub_ = function(block, code, opt_thisOnly) {
+  const nextBlock = block.nextConnection && block.nextConnection.targetBlock();
+  const nextCode = opt_thisOnly ? '' : ev3Compiler.blockToCode(nextBlock);
+  
+  // Glue the current block's hex code to the next block's hex code
+  return code + nextCode; 
+};
+
 // The Beep Fix (So it doesn't get cut off at the end of the file)
 ev3Compiler.forBlock['ev3_beep'] = function(block) { 
   // Standard beep, but we add 0x96 (opSOUND_READY) at the end 
