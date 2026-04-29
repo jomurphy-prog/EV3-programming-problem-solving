@@ -192,7 +192,7 @@ ev3Compiler.forBlock['ev3_sensor_logic'] = function(block) {
   let elseBytes = elseCode.split(',').filter(s => s.trim().length > 0).length;
 
   let threshHex = "0x" + parseInt(threshold).toString(16).padStart(2, '0').toUpperCase();
-  let opCode = operator === "LT" ? "0x72" : "0x6E"; 
+  let opCode = operator === "LT" ? "0x7C" : "0x74"; 
 
   let readCode = `0x9A, 0x00, 0x0${port}, 0x1D, 0x00, 0x40, `;
   let compareCode = `${opCode}, 0x40, 0x81, ${threshHex}, 0x44, `;
