@@ -11,6 +11,28 @@ const runBtn = document.getElementById('runBtn');
 const uploadBtn = document.getElementById('uploadBtn');
 const statusDiv = document.getElementById('status');
 
+// --- MODAL LOGIC ---
+const helpBtn = document.getElementById('helpBtn');
+const instructionsModal = document.getElementById('instructionsModal');
+const closeModalBtn = document.getElementById('closeModalBtn');
+
+// Open the modal
+helpBtn.addEventListener('click', () => {
+  instructionsModal.style.display = 'block';
+});
+
+// Close the modal when clicking the 'X'
+closeModalBtn.addEventListener('click', () => {
+  instructionsModal.style.display = 'none';
+});
+
+// Close the modal when clicking outside the white box
+window.addEventListener('click', (event) => {
+  if (event.target === instructionsModal) {
+    instructionsModal.style.display = 'none';
+  }
+});
+
 // --- 1. TWO-WAY BLUETOOTH/USB SERIAL CONNECTION ---
 connectBtn.addEventListener('click', async () => {
   try {
