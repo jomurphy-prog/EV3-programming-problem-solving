@@ -439,6 +439,88 @@ runBtn.addEventListener('click', async () => {
   }
 });
 
+// --- 8. SAVE & LOAD WORKSPACE (LOCAL JSON) ---
+
+const saveBtn = document.getElementById('saveBtn');
+const loadBtn = document.getElementById('loadBtn');
+const loadInput = document.getElementById('loadInput');
+
+// SAVE BLOCKS
+saveBtn.addEventListener('click', () => {
+  try {
+    // 1. Ask Blockly to extract the current state as a JSON object
+    const state = Blockly.serialization.workspaces.save(workspace);
+    const stateString = JSON.stringify(state, null, 2); // Pretty-print JSON
+
+    // 2. Create a virtual file (Blob) containing the JSON data
+    const blob = new Blob([stateString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    // 3. Create a temporary, invisible link and "click" it to trigger the download
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = currentFileName + "_blocks.json"; 
+    document.body.appendChild(a);
+    a.click();
+    
+    // 4. Clean up the invisible link
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    statusDiv.innerText = "Status: Workspace Saved Locally!";
+    statusDiv.style.color = "green";
+  } catch (err) {
+    statusDiv.innerText = "Status: Failed to save workspace.";
+    statusDiv.style.color = "red";
+    console.error(err);
+  }
+});
+
+// LOAD BLOCKS (Trigger the hidden file input)
+loadBtn.addEventListener('click', () => {
+  loadInput.click();
+});
+
+// LOAD BLOCKS (Process the file once selected)
+loadInput.addEventListener('change', (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  
+  // What to do when the file finishes reading:
+  reader.onload = function(e) {
+    try {
+      const stateString = e.target.result;
+      const state = JSON.parse(stateString);
+      
+      // 1. Clear the current workspace
+      workspace.clear();
+      
+      // 2. Inject the saved blocks
+      Blockly.serialization.workspaces.load(state, workspace);
+      
+      // 3. Update the UI filename based on the uploaded file (remove the _blocks.json part)
+      let cleanName = file.name.replace("_blocks.json", "").replace(".json", "");
+      currentFileName = cleanName;
+      document.getElementById('fileNameDisplay').innerText = currentFileName + ".rbf";
+      
+      statusDiv.innerText = "Status: Workspace Loaded!";
+      statusDiv.style.color = "green";
+    } catch (err) {
+      statusDiv.innerText = "Status: Invalid File Format.";
+      statusDiv.style.color = "red";
+      console.error(err);
+    }
+  };
+  
+  // Start reading the file as text
+  reader.readAsText(file);
+  
+  // Reset the input so the user can load the exact same file again later if they want to revert
+  event.target.value = '';
+});
+
 // --- 7. COMPILE & UPLOAD (UNTETHERED) ---
 uploadBtn.addEventListener('click', async () => {
   try {
