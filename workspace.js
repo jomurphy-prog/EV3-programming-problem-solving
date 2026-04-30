@@ -129,7 +129,18 @@ async function readSensor(portIndex) {
 
 // --- 2. DEFINE CUSTOM BLOCKS ---
 Blockly.Blocks['ev3_beep'] = { init: function() { this.appendDummyInput().appendField("Play EV3 Beep"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(230); } };
-Blockly.Blocks['ev3_wait'] = { init: function() { this.appendDummyInput().appendField("Wait 1 Second"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(120); } };
+Blockly.Blocks['ev3_wait'] = {
+  init: function() {
+    this.appendDummyInput()
+        .appendField("Wait")
+        .appendField(new Blockly.FieldNumber(1000, 1), "MS")
+        .appendField("ms");
+    this.setPreviousStatement(true, null);
+    this.setNextStatement(true, null);
+    this.setColour(120);
+    this.setTooltip("Pauses the program for the specified number of milliseconds (1000 ms = 1 second).");
+  }
+};
 Blockly.Blocks['ev3_motor_custom'] = { init: function() { this.appendDummyInput().appendField("Start Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["A+B", "0x03"] ]), "PORT"); this.appendValueInput("SPEED").setCheck("Number").appendField("at speed"); this.setInputsInline(true); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
 Blockly.Blocks['ev3_motor_stop'] = { init: function() { this.appendDummyInput().appendField("Stop Motor").appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["All", "0x0F"] ]), "PORT"); this.setPreviousStatement(true, null); this.setNextStatement(true, null); this.setColour(60); } };
 
@@ -221,7 +232,11 @@ Blockly.Blocks['ev3_infinite_loop'] = {
 // --- 3. GENERATORS (TETHERED JS) ---
 const generator = javascript.javascriptGenerator;
 generator.forBlock['ev3_beep'] = function(block) { return `await sendCommand(new Uint8Array([0x0F, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03]));\n`; };
-generator.forBlock['ev3_wait'] = function(block) { return `await new Promise(resolve => setTimeout(resolve, 1000));\n`; };
+
+generator.forBlock['ev3_wait'] = function(block) { 
+  const ms = block.getFieldValue('MS');
+  return `await new Promise(resolve => setTimeout(resolve, ${ms}));\n`; 
+};
 generator.forBlock['ev3_motor_custom'] = function(block) { const portString = block.getFieldValue('PORT'); const speedCode = generator.valueToCode(block, 'SPEED', javascript.Order.NONE) || '50'; return `await (async () => { let portMask = parseInt("${portString}", 16); let speed = Math.max(-100, Math.min(100, Math.round(${speedCode}))); let speedByte = speed < 0 ? 256 + speed : speed; await sendCommand(new Uint8Array([0x0D, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0xA4, 0x00, portMask, 0x81, speedByte, 0xA6, 0x00, portMask])); })();\n`; };
 generator.forBlock['ev3_motor_stop'] = function(block) { const portString = block.getFieldValue('PORT'); return `await (async () => { let portMask = parseInt("${portString}", 16); await sendCommand(new Uint8Array([0x09, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0xA3, 0x00, portMask, 0x01])); })();\n`; };
 generator.forBlock['ev3_touch'] = function(block) { const port = block.getFieldValue('PORT'); const code = `(await readSensor(${port}) === 1)`; return [code, javascript.Order.ATOMIC]; };
@@ -314,8 +329,20 @@ ev3Compiler.forBlock['ev3_infinite_loop'] = function(block) {
   return doCode + jumpCode;
 }
 
+// The Dynamic 32-Bit Memory Wait
 ev3Compiler.forBlock['ev3_wait'] = function(block) { 
-  return "0x85, 0x83, 0xE8, 0x03, 0x00, 0x00, 0x48, 0x86, 0x48, "; 
+  // 1. Grab the milliseconds from the block
+  const ms = parseInt(block.getFieldValue('MS'));
+
+  // 2. Convert to 32-bit Little-Endian Hex (Lowest byte first, highest byte last)
+  let b0 = "0x" + (ms & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  let b1 = "0x" + ((ms >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  let b2 = "0x" + ((ms >> 16) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  let b3 = "0x" + ((ms >>> 24) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+
+  // 3. Inject the dynamic time bytes into the wait sequence
+  // 0x85 (Wait), 0x83 (32-bit Constant Flag), [Time], 0x48 (Save to Mem), 0x86 (Ready), 0x48 (Halt Thread)
+  return `0x85, 0x83, ${b0}, ${b1}, ${b2}, ${b3}, 0x48, 0x86, 0x48, `; 
 };
 
 // Touch sensor block generator
