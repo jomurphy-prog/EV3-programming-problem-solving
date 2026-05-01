@@ -57,10 +57,20 @@ connectUsbBtn.addEventListener('click', async () => {
 
       // 2. Listen for replies from the EV3
       hidDevice.addEventListener('inputreport', (event) => {
-        // event.data is a DataView containing the EV3's reply
+        // event.data is a DataView containing the EV3's 1024-byte reply
         const replyBytes = new Uint8Array(event.data.buffer);
-        console.log("EV3 USB Reply:", replyBytes);
-        // (You can wire this into any success/error checking you do later!)
+        
+        // The EV3 puts the Message ID at bytes 2 and 3
+        if (replyBytes.length >= 5) {
+          let msgId = replyBytes[2] + (replyBytes[3] << 8);
+          
+          // If our uploader is waiting for this exact Message ID, resolve it!
+          if (pendingRequests.has(msgId)) {
+            let resolve = pendingRequests.get(msgId);
+            pendingRequests.delete(msgId);
+            resolve(replyBytes); 
+          }
+        }
       });
     }
   } catch (err) {
@@ -180,7 +190,7 @@ async function readSensor(portIndex) {
     pendingRequests.set(msgId, resolve);
     setTimeout(() => { if (pendingRequests.has(msgId)) { pendingRequests.delete(msgId); resolve(null); } }, 1000);
   });
-  await sendtoEV3(byteArray);
+  await sendToEV3(byteArray);
   let msg = await replyPromise;
   if (msg && msg[4] === 0x02 && msg.length >= 9) {
     let view = new DataView(msg.buffer, msg.byteOffset, msg.byteLength);
@@ -681,7 +691,7 @@ uploadBtn.addEventListener('click', async () => {
     contCmd.set(dataBytes, 7);
 
     let contReplyPromise = new Promise(resolve => { pendingRequests.set(msgId2, resolve); setTimeout(() => resolve(null), 2000); });
-    await sendtoEV3(contCmd);
+    await sendToEV3(contCmd);
     let contReply = await contReplyPromise;
 
     if (contReply && contReply[4] === 0x05) { throw new Error(`CONTINUE rejected. EV3 Code: 0x${contReply[6].toString(16).toUpperCase()}`); }
