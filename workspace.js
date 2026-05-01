@@ -543,7 +543,7 @@ runBtn.addEventListener('click', async () => {
   try {
     const generatedCode = generator.workspaceToCode(workspace);
     const executeBlocks = new Function('sendCommand', 'readSensor', `return (async () => { try { ${generatedCode} } catch (err) { throw err; } })();`);
-    await executeBlocks(sendEV3Command, readSensor);
+    await executeBlocks(sendToEV3, readSensor);
     statusDiv.innerText = "Status: Tethered Execution Complete!"; statusDiv.style.color = "green";
   } catch (error) {
     statusDiv.innerText = "Status: Runtime Error - " + error.message; statusDiv.style.color = "red";
@@ -664,7 +664,7 @@ uploadBtn.addEventListener('click', async () => {
     beginCmd.set(pathBytes, 10);
 
     let beginReplyPromise = new Promise(resolve => { pendingRequests.set(msgId1, resolve); setTimeout(() => resolve(null), 2000); });
-    await sendEV3Command(beginCmd);
+    await sendToEV3(beginCmd);
     let beginReply = await beginReplyPromise;
 
     if (beginReply && beginReply[4] === 0x05) { throw new Error(`BEGIN rejected. EV3 Code: 0x${beginReply[6].toString(16).toUpperCase()}`); }
@@ -681,7 +681,7 @@ uploadBtn.addEventListener('click', async () => {
     contCmd.set(dataBytes, 7);
 
     let contReplyPromise = new Promise(resolve => { pendingRequests.set(msgId2, resolve); setTimeout(() => resolve(null), 2000); });
-    await sendEV3Command(contCmd);
+    await sendtoEV3(contCmd);
     let contReply = await contReplyPromise;
 
     if (contReply && contReply[4] === 0x05) { throw new Error(`CONTINUE rejected. EV3 Code: 0x${contReply[6].toString(16).toUpperCase()}`); }
@@ -695,7 +695,7 @@ uploadBtn.addEventListener('click', async () => {
     closeCmd[0] = closeLen & 0xFF; closeCmd[1] = (closeLen >> 8) & 0xFF; closeCmd[2] = msgId3 & 0xFF; closeCmd[3] = (msgId3 >> 8) & 0xFF;
     closeCmd[4] = 0x01; closeCmd[5] = 0x98; closeCmd[6] = fileHandle;
 
-    await sendEV3Command(closeCmd); 
+    await sendToEV3(closeCmd); 
     statusDiv.innerText = "Status: Executable Uploaded! Run it on the EV3.";
     statusDiv.style.color = "green";
   } catch (err) {
