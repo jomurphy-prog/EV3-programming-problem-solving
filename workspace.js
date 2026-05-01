@@ -6,7 +6,7 @@ let msgIdCounter = 1;
 const pendingRequests = new Map();
 let inputBuffer = new Uint8Array(0);
 
-const connectBtn = document.getElementById('connectBtn');
+const connectBtBtn = document.getElementById('connectBtBtn');
 const runBtn = document.getElementById('runBtn');
 const uploadBtn = document.getElementById('uploadBtn');
 const statusDiv = document.getElementById('status');
@@ -92,7 +92,7 @@ connectBtBtn.addEventListener('click', async () => {
     statusDiv.style.color = "green";
     runBtn.disabled = false;
     uploadBtn.disabled = false; 
-    connectBtn.disabled = true;
+    connectBtBtn.disabled = true;
   } catch (error) {
     statusDiv.innerText = "Status: Connection Failed";
     statusDiv.style.color = "red";
@@ -190,7 +190,7 @@ async function readSensor(portIndex) {
     pendingRequests.set(msgId, resolve);
     setTimeout(() => { if (pendingRequests.has(msgId)) { pendingRequests.delete(msgId); resolve(null); } }, 1000);
   });
-  await sendToEV3(byteArray);
+  await sendToEV3(byteCode);
   let msg = await replyPromise;
   if (msg && msg[4] === 0x02 && msg.length >= 9) {
     let view = new DataView(msg.buffer, msg.byteOffset, msg.byteLength);
