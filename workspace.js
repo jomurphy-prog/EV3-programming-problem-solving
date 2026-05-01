@@ -33,8 +33,45 @@ window.addEventListener('click', (event) => {
   }
 });
 
-// --- 1. TWO-WAY BLUETOOTH/USB SERIAL CONNECTION ---
-connectBtn.addEventListener('click', async () => {
+// --- DUAL BRIDGE: USB WEBHID CONNECTION ---
+const connectUsbBtn = document.getElementById('connectUsbBtn');
+let hidDevice = null;
+
+connectUsbBtn.addEventListener('click', async () => {
+  try {
+    // 1. Request the EV3 specifically using its LEGO Vendor ID and Product ID
+    const devices = await navigator.hid.requestDevice({
+      filters: [{ vendorId: 0x0694, productId: 0x0005 }]
+    });
+
+    if (devices.length > 0) {
+      hidDevice = devices[0];
+      await hidDevice.open();
+      
+      statusDiv.innerText = "Status: USB Connected!";
+      statusDiv.style.color = "green";
+      
+      // Enable the coding buttons
+      document.getElementById('uploadBtn').disabled = false;
+      document.getElementById('runBtn').disabled = false;
+
+      // 2. Listen for replies from the EV3
+      hidDevice.addEventListener('inputreport', (event) => {
+        // event.data is a DataView containing the EV3's reply
+        const replyBytes = new Uint8Array(event.data.buffer);
+        console.log("EV3 USB Reply:", replyBytes);
+        // (You can wire this into any success/error checking you do later!)
+      });
+    }
+  } catch (err) {
+    statusDiv.innerText = "Status: USB Connection Failed.";
+    statusDiv.style.color = "red";
+    console.error("WebHID Error:", err);
+  }
+});
+
+// --- BLUETOOTH CONNECTION ---
+connectBtBtn.addEventListener('click', async () => {
   try {
     port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200 });
@@ -105,10 +142,35 @@ async function listenToPort() {
   }
 }
 
-async function sendEV3Command(byteArray) {
-  if (!writer) return;
-  await writer.write(byteArray);
-  await new Promise(resolve => setTimeout(resolve, 50)); 
+//async function sendEV3Command(byteArray) {
+//  if (!writer) return;
+//  await writer.write(byteArray);
+//  await new Promise(resolve => setTimeout(resolve, 50)); 
+// }
+
+// --- MASTER DATA SENDER ---
+async function sendToEV3(byteArray) {
+  if (hidDevice && hidDevice.opened) {
+    // === USB HID ROUTE ===
+    // The EV3 requires USB reports to be EXACTLY 1024 bytes long.
+    // We create a blank 1024-byte array and paste our compiled code at the very beginning.
+    const paddedArray = new Uint8Array(1024);
+    paddedArray.set(byteArray, 0); 
+
+    // Send via Report ID 0
+    await hidDevice.sendReport(0, paddedArray);
+    console.log("Sent via USB (Padded to 1024 bytes)");
+
+  } else if (port) { // Assuming 'port' is your existing Web Serial variable
+    // === BLUETOOTH SERIAL ROUTE ===
+    const writer = port.writable.getWriter();
+    await writer.write(new Uint8Array(byteArray));
+    writer.releaseLock();
+    console.log("Sent via Bluetooth Serial");
+    
+  } else {
+    alert("No EV3 connected! Please connect via USB or Bluetooth.");
+  }
 }
 
 async function readSensor(portIndex) {
@@ -118,7 +180,7 @@ async function readSensor(portIndex) {
     pendingRequests.set(msgId, resolve);
     setTimeout(() => { if (pendingRequests.has(msgId)) { pendingRequests.delete(msgId); resolve(null); } }, 1000);
   });
-  await sendEV3Command(bytecode);
+  await sendtoEV3(byteArray);
   let msg = await replyPromise;
   if (msg && msg[4] === 0x02 && msg.length >= 9) {
     let view = new DataView(msg.buffer, msg.byteOffset, msg.byteLength);
