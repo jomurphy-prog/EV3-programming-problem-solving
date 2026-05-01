@@ -162,20 +162,16 @@ async function listenToPort() {
 async function sendToEV3(byteArray) {
   if (hidDevice && hidDevice.opened) {
     // === USB HID ROUTE ===
-    // The EV3 requires USB reports to be EXACTLY 1024 bytes long.
-    // We create a blank 1024-byte array and paste our compiled code at the very beginning.
     const paddedArray = new Uint8Array(1024);
     paddedArray.set(byteArray, 0); 
 
-    // Send via Report ID 0
     await hidDevice.sendReport(0, paddedArray);
     console.log("Sent via USB (Padded to 1024 bytes)");
 
-  } else if (port) { // Assuming 'port' is your existing Web Serial variable
+  } else if (port && writer) { 
     // === BLUETOOTH SERIAL ROUTE ===
-    const writer = port.writable.getWriter();
+    // Use the already-open global writer!
     await writer.write(new Uint8Array(byteArray));
-    writer.releaseLock();
     console.log("Sent via Bluetooth Serial");
     
   } else {
@@ -185,7 +181,7 @@ async function sendToEV3(byteArray) {
 
 async function readSensor(portIndex) {
   let msgId = msgIdCounter++;
-  let bytecode = new Uint8Array([ 0x0D, 0x00, msgId & 0xFF, (msgId >> 8) & 0xFF, 0x00, 0x04, 0x00, 0x99, 0x1D, 0x00, portIndex, 0x00, 0x00, 0x01, 0x60 ]);
+  let byteCode = new Uint8Array([ 0x0D, 0x00, msgId & 0xFF, (msgId >> 8) & 0xFF, 0x00, 0x04, 0x00, 0x99, 0x1D, 0x00, portIndex, 0x00, 0x00, 0x01, 0x60 ]);
   let replyPromise = new Promise(resolve => {
     pendingRequests.set(msgId, resolve);
     setTimeout(() => { if (pendingRequests.has(msgId)) { pendingRequests.delete(msgId); resolve(null); } }, 1000);
