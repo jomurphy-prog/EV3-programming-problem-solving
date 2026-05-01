@@ -301,6 +301,27 @@ Blockly.Blocks['ev3_infinite_loop'] = {
   }
 };
 
+Blockly.Blocks['ev3_motor_rotations'] = {
+  init: function() {
+    this.appendDummyInput()
+        .appendField("Rotate Motor")
+        .appendField(new Blockly.FieldDropdown([ ["A", "0x01"], ["B", "0x02"], ["C", "0x04"], ["D", "0x08"], ["A+B", "0x03"] ]), "PORT");
+    this.appendValueInput("ROTATIONS")
+        .setCheck("Number")
+        .appendField("for");
+    this.appendDummyInput()
+        .appendField("rotations");
+    this.appendValueInput("SPEED")
+        .setCheck("Number")
+        .appendField("at speed");
+    this.setInputsInline(true);
+    this.setPreviousStatement(true, null);
+    this.setNextStatement(true, null);
+    this.setColour(60);
+    this.setTooltip("Rotates the specified motor for a set number of rotations.");
+  }
+};
+
 // --- 3. GENERATORS (TETHERED JS) ---
 const generator = javascript.javascriptGenerator;
 generator.forBlock['ev3_beep'] = function(block) { return `await sendCommand(new Uint8Array([0x0F, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x94, 0x01, 0x81, 0x32, 0x82, 0xE8, 0x03, 0x82, 0xE8, 0x03]));\n`; };
@@ -327,6 +348,53 @@ ev3Compiler.scrub_ = function(block, code, opt_thisOnly) {
   const nextBlock = block.nextConnection && block.nextConnection.targetBlock();
   const nextCode = opt_thisOnly ? '' : ev3Compiler.blockToCode(nextBlock);
   return code + nextCode; 
+};
+
+ev3Compiler.forBlock['ev3_motor_rotations'] = function(block) { 
+  const port = block.getFieldValue('PORT');
+  
+  // 1. Get Speed (Default to 50)
+  let speed = 50;
+  let speedTarget = block.getInputTargetBlock('SPEED');
+  if (speedTarget && speedTarget.type === 'math_number') { 
+    speed = parseInt(speedTarget.getFieldValue('NUM')); 
+  }
+  
+  // 2. Get Rotations (Default to 1)
+  let rotations = 1;
+  let rotTarget = block.getInputTargetBlock('ROTATIONS');
+  if (rotTarget && rotTarget.type === 'math_number') { 
+    rotations = parseFloat(rotTarget.getFieldValue('NUM')); 
+  }
+
+  // 3. EV3 Math: Speed dictates direction, Steps must be absolute (positive)
+  let speedByte = speed < 0 ? 256 + speed : speed;
+  let speedHex = "0x" + speedByte.toString(16).padStart(2, '0').toUpperCase();
+  
+  // Convert rotations to degrees (1 rotation = 360 degrees)
+  let degrees = Math.abs(Math.round(rotations * 360));
+
+  // Convert degrees to 32-bit Little-Endian Hex
+  let b0 = "0x" + (degrees & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  let b1 = "0x" + ((degrees >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  let b2 = "0x" + ((degrees >> 16) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+  let b3 = "0x" + ((degrees >>> 24) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+
+  // 4. Construct the Hex Command
+  // 0xAE = opOUTPUT_STEP_SPEED
+  // 0x00 = Layer 0
+  // [port] = Port Mask
+  // 0x81, [speedHex] = 8-bit Speed
+  // 0x00 = 0 Ramp Up Steps
+  // 0x83, b0, b1, b2, b3 = 32-bit Constant Steps (Degrees)
+  // 0x00 = 0 Ramp Down Steps
+  // 0x01 = Brake at end
+  let moveCode = `0xAE, 0x00, ${port}, 0x81, ${speedHex}, 0x00, 0x83, ${b0}, ${b1}, ${b2}, ${b3}, 0x00, 0x01, `;
+  
+  // 0xAA = opOUTPUT_READY (Wait for motor to finish before reading next block!)
+  let waitCode = `0xAA, 0x00, ${port}, `;
+  
+  return moveCode + waitCode;
 };
 
 ev3Compiler.forBlock['ev3_beep'] = function(block) { 
